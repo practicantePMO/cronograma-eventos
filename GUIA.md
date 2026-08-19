@@ -6,7 +6,7 @@ necesita correo para cada cuenta (nada de Google/Microsoft).
 
 Tienes: VS Code, Docker, Python. Docker no se usa en este proyecto (todo corre en
 la nube gratis), pero Python si lo necesitas instalado localmente si quieres
-probar el scraper antes de subirlo.
+probar el scraper antes de subirlo.  
 
 ---
 
@@ -41,12 +41,7 @@ Si no aparece nada, descarga Git desde https://git-scm.com/downloads e instalalo
    contenido, pegalo en el editor de Supabase, y dale **Run**.
    Esto crea las tablas `proyectos`, `eventos`, `fuentes_verificadas` con la
    seguridad configurada (el sitio puede leer, pero no escribir).
-7. Ve a **Project Settings** (icono de engranaje) → **API**. Ahi vas a ver:
-   - **Project URL** → la vas a necesitar como `SUPABASE_URL`
-   - **anon public key** → la vas a necesitar como `SUPABASE_ANON_KEY` (para el sitio)
-   - **service_role key** → la vas a necesitar como `SUPABASE_SERVICE_KEY` (para el
-     scraper — **esta es secreta, nunca la pongas en el sitio web ni la subas a
-     GitHub en texto plano**)
+
 
 ---
 
