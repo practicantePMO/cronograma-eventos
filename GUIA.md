@@ -120,33 +120,47 @@ no afectan nada mas.
 
 ---
 
-## Parte 4 — Cloudflare Pages: el sitio, el panel y la contrasena
+## Parte 4 — Cloudflare: el sitio, el panel y la contrasena (con Worker unico)
+
+Cloudflare cambio su sistema en 2026: unifico "Pages" y "Workers" en un solo
+producto, y los proyectos nuevos ya NO usan la vieja carpeta `/functions`
+automaticamente. Por eso este proyecto trae, en la raiz, un archivo
+`wrangler.jsonc` y una carpeta `worker/` con un Worker unico que hace todo lo
+que antes hacian las funciones sueltas (proteger con contrasena + atender el
+panel PMO).
 
 1. Edita `site/index.html` y pon tu `SUPABASE_URL` y `SUPABASE_ANON_KEY`
    (publishable key) reales, donde dice `CONFIGURA ESTO`.
 
-2. En Cloudflare → **Workers & Pages** → **Create** → **Pages** →
-   **Connect to Git** → selecciona tu repo.
-   - **Build command**: vacio
-   - **Build output directory**: `site`
-   - Dale **Save and Deploy**.
+2. Sube todo a GitHub:
 
-3. Ve a **Settings** → **Environment variables** del proyecto de Pages, y
-   agrega:
-   - `SITE_PASSWORD` → la contrasena compartida del equipo
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_KEY`
-     (Estas ultimas dos las necesitan `functions/api/proyectos.js` y
-     `functions/api/eventos.js` para que el panel funcione.)
-
-4. Vuelve a desplegar (Retry deployment, o haz otro `git push`).
-
-5. Sube todo con git:
    ```
    git add .
-   git commit -m "Configurar Supabase y contrasena"
+   git commit -m "Configurar Supabase y pasar a Worker unico"
    git push
    ```
+
+3. **Si ya tenias un proyecto de Pages creado que te dio el error de
+   "Variables cannot be added..."**, bórralo (Settings del proyecto → borrar,
+   hasta abajo) y crea uno nuevo desde cero con estos pasos. Es más simple
+   que intentar convertirlo.
+
+4. En Cloudflare, ve a **Workers & Pages** → **Create** → busca la opcion
+   **Import a repository** (o "Connect to Git", el nombre puede variar
+   ligeramente segun cuando lo veas).
+5. Selecciona tu repositorio `cronograma-eventos`.
+6. Cloudflare deberia detectar automaticamente el archivo `wrangler.jsonc` en
+   la raiz del repo y configurar el build solo. Si te pide **Build command**,
+   dejalo vacio. Dale **Deploy**.
+
+7. Cuando termine, ve a **Settings** → **Variables and Secrets** de este
+   Worker (ya NO deberia darte el error de antes, porque ahora si hay un
+   Worker real con codigo, no solo archivos estaticos). Agrega:
+   - `SITE_PASSWORD` → tipo **Secret** → la contrasena compartida del equipo
+   - `SUPABASE_URL` → tipo **Variable** → tu Project URL de Supabase
+   - `SUPABASE_SERVICE_KEY` → tipo **Secret** → tu Secret key de Supabase
+
+8. Guarda y vuelve a desplegar si te lo pide (Retry deployment).
 
 ---
 

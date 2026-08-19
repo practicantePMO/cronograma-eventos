@@ -13,7 +13,7 @@ use_default_settings: true
 server:
   # IMPORTANTE: reemplaza este valor por uno propio antes de desplegar.
   # Puedes generar uno corriendo en tu terminal: python3 -c "import secrets; print(secrets.token_hex(32))"
-  secret_key: "1758b5ae75e995ad8b9659967ad5a0b5aeede1460e2d154899ae9726a696d5d5"
+  secret_key: "REEMPLAZA_ESTO_POR_TU_PROPIA_CLAVE_ALEATORIA"
   limiter: false
 
 search:
