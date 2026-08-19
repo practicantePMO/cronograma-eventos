@@ -31,6 +31,8 @@ import hashlib
 import sys
 from datetime import datetime, timezone
 
+import re
+
 import feedparser
 import requests
 
@@ -153,8 +155,16 @@ def procesar_fuente(fuente, proyectos):
 
         resumen = entry.get("summary", "")[:500]
 
-        # Fecha: usa published_parsed si existe, si no usa ahora mismo
-        if getattr(entry, "published_parsed", None):
+        # Descartar si el texto menciona una fecha explicita que ya paso.
+        if fecha_ya_paso(f"{titulo} {resumen}".lower()):
+            continue
+
+        # Fecha para el calendario: preferimos una fecha detectada en el texto;
+        # si no hay, usamos la fecha de publicacion del feed; si tampoco, hoy.
+        fecha_detectada = extraer_fecha_del_texto(f"{titulo} {resumen}".lower())
+        if fecha_detectada:
+            fecha = fecha_detectada
+        elif getattr(entry, "published_parsed", None):
             fecha = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
         else:
             fecha = datetime.now(timezone.utc)
@@ -176,6 +186,71 @@ def procesar_fuente(fuente, proyectos):
         insertar_evento(evento)
 
 
+# Meses en espanol e ingles para detectar fechas escritas en el texto.
+MESES = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10,
+    "noviembre": 11, "diciembre": 12,
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
+    "december": 12,
+    "ene": 1, "feb": 2, "mar": 3, "abr": 4, "jun": 6, "jul": 7, "ago": 8,
+    "sep": 9, "oct": 10, "nov": 11, "dic": 12,
+}
+
+# Frases tipicas de una landing page de empresa (no de un evento puntual).
+# Si el texto se parece mas a esto, lo descartamos.
+SENALES_PAGINA_EMPRESA = [
+    "nuestros servicios", "nuestros productos", "quienes somos",
+    "sobre nosotros", "about us", "our services", "our products",
+    "solicita una demo", "request a demo", "contactanos", "contact us",
+    "planes y precios", "pricing", "solucion empresarial",
+    "plataforma lider", "leading platform", "software de",
+]
+
+
+def extraer_fecha_del_texto(texto):
+    """
+    Intenta encontrar una fecha en el texto (ej. "15 de marzo de 2026" o
+    "March 15, 2026"). Devuelve un datetime con dia 1 si solo encuentra
+    mes+ano, o None si no encuentra nada confiable.
+    """
+    t = texto.lower()
+
+    # Patron: "15 de marzo de 2026" / "15 de marzo 2026"
+    m = re.search(r"(\d{1,2})\s+de\s+([a-záéíóú]+)\s+(?:de\s+)?(\d{4})", t)
+    if m and m.group(2) in MESES:
+        try:
+            return datetime(int(m.group(3)), MESES[m.group(2)], int(m.group(1)), tzinfo=timezone.utc)
+        except ValueError:
+            pass
+
+    # Patron: "march 15, 2026" / "march 2026"
+    m = re.search(r"([a-z]+)\s+(\d{1,2})?,?\s*(\d{4})", t)
+    if m and m.group(1) in MESES:
+        try:
+            dia = int(m.group(2)) if m.group(2) else 1
+            return datetime(int(m.group(3)), MESES[m.group(1)], dia, tzinfo=timezone.utc)
+        except ValueError:
+            pass
+
+    return None  # no se encontro fecha confiable
+
+
+def fecha_ya_paso(texto):
+    """True solo si detectamos una fecha y esa fecha ya paso."""
+    fecha = extraer_fecha_del_texto(texto)
+    if fecha is None:
+        return False  # sin fecha detectable -> NO lo descartamos (segun tu eleccion)
+    # Damos un margen de 1 dia por zonas horarias.
+    return fecha.date() < datetime.now(timezone.utc).date()
+
+
+def parece_pagina_de_empresa(titulo, descripcion):
+    texto = f"{titulo} {descripcion}".lower()
+    return any(frase in texto for frase in SENALES_PAGINA_EMPRESA)
+
+
 def parece_evento(titulo, descripcion, url):
     texto = f"{titulo} {descripcion}".lower()
     url_lower = url.lower()
@@ -192,6 +267,16 @@ def parece_evento(titulo, descripcion, url):
     #    Esto filtra paginas genericas que solo mencionan la palabra "webinar"
     #    de pasada (ej. una landing de un servicio pago).
     if not any(senal in texto for senal in SENALES_FECHA):
+        return False
+
+    # 4. Descartar si parece una landing page de empresa (servicios, precios,
+    #    "quienes somos", etc.) en vez de un evento puntual.
+    if parece_pagina_de_empresa(titulo, descripcion):
+        return False
+
+    # 5. Descartar si detectamos una fecha y esa fecha YA paso.
+    #    (Si no hay fecha detectable, se deja pasar, segun tu preferencia.)
+    if fecha_ya_paso(texto):
         return False
 
     return True
@@ -237,10 +322,15 @@ def buscar_por_categoria(categoria, proyecto_id):
             if not parece_evento(titulo, descripcion, url):
                 continue  # descarta lo que no parece un evento real
 
+            # Si detectamos una fecha real en el texto, la usamos; si no,
+            # usamos "hoy" para que al menos aparezca en el calendario.
+            fecha_detectada = extraer_fecha_del_texto(f"{titulo} {descripcion}".lower())
+            fecha_evento = (fecha_detectada or datetime.now(timezone.utc)).isoformat()
+
             evento = {
                 "titulo": titulo,
                 "descripcion": descripcion,
-                "fecha_inicio": datetime.now(timezone.utc).isoformat(),
+                "fecha_inicio": fecha_evento,
                 "categoria": categoria,
                 "fuente_tipo": "automatico",
                 "fuente_nombre": "Busqueda automatica (SearXNG)",
