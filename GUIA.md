@@ -2,11 +2,11 @@
 
 Stack final, 100% gratuito y sin depender de Google/Microsoft en ninguna parte:
 
-| Pieza | Herramienta | Por que |
-|---|---|---|
-| Base de datos | **Supabase** (Postgres) | Gratis, estable, cuenta con solo un correo |
-| Sitio + panel + contrasena | **Cloudflare Pages** + Functions | Gratis, sin limite de usuarios, sin cuenta de terceros para el equipo |
-| Automatizacion diaria | **GitHub Actions** | Gratis, corre el scraper solo |
+| Pieza                                        | Herramienta                            | Por que                                                                                               |
+| -------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Base de datos                                | **Supabase** (Postgres)                | Gratis, estable, cuenta con solo un correo                                                            |
+| Sitio + panel + contrasena                   | **Cloudflare Pages** + Functions       | Gratis, sin limite de usuarios, sin cuenta de terceros para el equipo                                 |
+| Automatizacion diaria                        | **GitHub Actions**                     | Gratis, corre el scraper solo                                                                         |
 | Busqueda automatica de eventos por categoria | **SearXNG** (auto-hospedado en Render) | Open source, sin cuenta de terceros, sin limite diario, no depende de ninguna API que se pueda cerrar |
 
 Si ya tenias el proyecto anterior armado (con RSS/Google), **puedes borrar
@@ -44,19 +44,24 @@ Esto reemplaza por completo lo que intentamos con Google. Vamos paso a paso.
 
 1. **Antes de subir nada**, abre `searxng/settings.yml` en VS Code y cambia
    la linea:
+
    ```
    secret_key: "REEMPLAZA_ESTO_POR_TU_PROPIA_CLAVE_ALEATORIA"
    ```
+
    Genera una clave propia corriendo esto en tu terminal (tienes Python
    instalado, asi que funciona directo):
+
    ```
    python -c "import secrets; print(secrets.token_hex(32))"
    ```
+
    Copia el resultado y pegalo en el archivo, reemplazando el texto de
    ejemplo (dejando las comillas).
 
 2. Sube el proyecto completo a GitHub (si ya tienes el repo, solo agrega los
    archivos nuevos):
+
    ```
    git add .
    git commit -m "Agregar SearXNG"
@@ -93,6 +98,7 @@ no afectan nada mas.
 
 1. Si no tienes el repo creado todavia, crealo en GitHub (privado) y sube el
    proyecto:
+
    ```
    git init
    git add .
@@ -130,8 +136,8 @@ no afectan nada mas.
    - `SITE_PASSWORD` → la contrasena compartida del equipo
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_KEY`
-   (Estas ultimas dos las necesitan `functions/api/proyectos.js` y
-   `functions/api/eventos.js` para que el panel funcione.)
+     (Estas ultimas dos las necesitan `functions/api/proyectos.js` y
+     `functions/api/eventos.js` para que el panel funcione.)
 
 4. Vuelve a desplegar (Retry deployment, o haz otro `git push`).
 
