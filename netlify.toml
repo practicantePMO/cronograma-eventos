@@ -1,0 +1,10 @@
+# Configuracion de Netlify para el cronograma PMO.
+
+[build]
+  # Carpeta con los archivos del sitio (index.html, admin.html, etc.)
+  publish = "site"
+  # Netlify encuentra las funciones automaticamente en netlify/functions
+  # y las edge functions en netlify/edge-functions, pero lo dejamos explicito:
+  functions = "netlify/functions"
+
+# No hay proceso de build (es HTML/JS plano), asi que no se define "command".
