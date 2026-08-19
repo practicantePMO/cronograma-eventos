@@ -1,0 +1,22 @@
+# Configuracion minima de SearXNG. Se apoya en la configuracion por defecto
+# (use_default_settings: true) y solo sobreescribe lo necesario:
+#
+# 1. Habilita el formato JSON (por defecto SearXNG solo entrega HTML, para
+#    evitar que bots externos raspen resultados; nosotros SI necesitamos JSON
+#    porque nuestro scraper en Python lo va a leer).
+# 2. Desactiva el "limiter" (un sistema anti-abuso que, si queda activo,
+#    bloquea las respuestas en JSON aunque las hayas habilitado arriba).
+# 3. Pone una clave secreta propia (cambia el valor de ejemplo por el tuyo).
+
+use_default_settings: true
+
+server:
+  # IMPORTANTE: reemplaza este valor por uno propio antes de desplegar.
+  # Puedes generar uno corriendo en tu terminal: python3 -c "import secrets; print(secrets.token_hex(32))"
+  secret_key: "1758b5ae75e995ad8b9659967ad5a0b5aeede1460e2d154899ae9726a696d5d5"
+  limiter: false
+
+search:
+  formats:
+    - html
+    - json

@@ -1,17 +1,29 @@
 """
 Recolector automatizado de eventos para el cronograma del PMO.
 
-Que hace:
-1. Lee la lista de fuentes verificadas desde Supabase (tabla fuentes_verificadas).
-2. Descarga cada feed RSS.
-3. Filtra las entradas segun las categorias de cada fuente.
-4. Evita duplicados usando un hash de titulo+url.
-5. Inserta las entradas nuevas en la tabla "eventos" de Supabase.
+Que hace (dos metodos, ambos corren en cada ejecucion):
 
-Requiere dos variables de entorno (se configuran como "Secrets" en GitHub Actions,
-NUNCA se escriben directo en este archivo):
+METODO 1 - RSS (opcional, para fuentes que tu ya conoces y quieres seguir fijas):
+  Lee la tabla fuentes_verificadas y procesa cada feed RSS.
+
+METODO 2 - Busqueda automatica por categoria (el que resuelve "cero trabajo manual"):
+  1. Lee las categorias de TODOS los proyectos activos en la tabla "proyectos".
+  2. Por cada categoria, busca en tu propia instancia de SearXNG (motor de
+     busqueda open source, auto-hospedado por ti en Render, sin cuentas de
+     terceros ni limites diarios de cuota) eventos/bootcamps/webinars sobre ese tema.
+  3. Filtra los resultados que realmente parecen eventos (por palabras clave).
+  4. Evita duplicados usando un hash de titulo+url.
+  5. Inserta las entradas nuevas en la tabla "eventos" de Supabase.
+
+Asi, cuando alguien del equipo PMO agrega un proyecto con una categoria nueva desde
+el panel (admin.html), NO hace falta que nadie configure una fuente RSS a mano ni
+crear ninguna cuenta: el scraper la detecta solo en su siguiente corrida.
+
+Requiere estas variables de entorno (se configuran como "Secrets" en GitHub
+Actions, NUNCA se escriben directo en este archivo):
   SUPABASE_URL          -> ej. https://xxxxx.supabase.co
-  SUPABASE_SERVICE_KEY  -> la llave "service_role" (secreta, con permiso de escritura)
+  SUPABASE_SERVICE_KEY  -> la llave secreta (antes llamada "service_role")
+  SEARXNG_URL           -> ej. https://tu-searxng.onrender.com (tu instancia propia)
 """
 
 import os
@@ -24,10 +36,23 @@ import requests
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
+SEARXNG_URL = (os.environ.get("SEARXNG_URL") or "").rstrip("/")
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     print("ERROR: faltan las variables de entorno SUPABASE_URL o SUPABASE_SERVICE_KEY")
     sys.exit(1)
+
+if not SEARXNG_URL:
+    print("AVISO: falta SEARXNG_URL -> se omite la busqueda automatica por categoria")
+
+# Palabras que deben aparecer en el titulo o descripcion para considerar que
+# un resultado de busqueda SI es un evento real (y no un articulo generico).
+PALABRAS_EVENTO = [
+    "evento", "eventos", "webinar", "bootcamp", "conferencia", "congreso",
+    "seminario", "taller", "curso", "certificacion", "certificación",
+    "inscripciones", "inscripcion", "inscripción", "meetup", "summit",
+    "foro", "jornada", "capacitacion", "capacitación",
+]
 
 HEADERS = {
     "apikey": SUPABASE_SERVICE_KEY,
@@ -131,16 +156,92 @@ def procesar_fuente(fuente, proyectos):
         insertar_evento(evento)
 
 
+def parece_evento(titulo, descripcion):
+    texto = f"{titulo} {descripcion}".lower()
+    return any(palabra in texto for palabra in PALABRAS_EVENTO)
+
+
+def buscar_por_categoria(categoria, proyecto_id):
+    """
+    Busca eventos sobre una categoria usando tu propia instancia de SearXNG
+    (auto-hospedada, JSON, sin cuenta ni limite diario de cuota).
+    """
+    if not SEARXNG_URL:
+        return
+
+    consultas = [
+        f"eventos {categoria}",
+        f"bootcamp {categoria}",
+        f"webinar {categoria} inscripciones",
+    ]
+
+    for consulta in consultas:
+        try:
+            resp = requests.get(
+                f"{SEARXNG_URL}/search",
+                params={"q": consulta, "format": "json"},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            print(f"  ! Error buscando '{consulta}': {exc}")
+            continue
+
+        for item in data.get("results", [])[:8]:  # limite por consulta
+            titulo = (item.get("title") or "").strip()
+            url = (item.get("url") or "").strip()
+            descripcion = (item.get("content") or "")[:500]
+
+            if not titulo or not url:
+                continue
+            if not parece_evento(titulo, descripcion):
+                continue  # descarta resultados que no parecen eventos reales
+
+            evento = {
+                "titulo": titulo,
+                "descripcion": descripcion,
+                "fecha_inicio": datetime.now(timezone.utc).isoformat(),
+                "categoria": categoria,
+                "fuente_tipo": "automatico",
+                "fuente_nombre": "Busqueda automatica (SearXNG)",
+                "url": url,
+                "proyecto_id": proyecto_id,
+                "hash_unico": calcular_hash(titulo, url),
+            }
+            insertar_evento(evento)
+
+
+def procesar_categorias_automaticas(proyectos):
+    categorias_vistas = set()
+    for p in proyectos:
+        if p.get("estado") != "activo":
+            continue
+        for categoria in p.get("categorias", []):
+            clave = categoria.lower()
+            if clave in categorias_vistas:
+                continue  # ya se busco esta categoria en esta corrida
+            categorias_vistas.add(clave)
+            print(f"Buscando automaticamente eventos para categoria: {categoria}")
+            try:
+                buscar_por_categoria(categoria, p["id"])
+            except Exception as exc:
+                print(f"  ! Error en categoria '{categoria}': {exc}")
+
+
 def main():
     fuentes = obtener_fuentes()
     proyectos = obtener_proyectos()
-    print(f"{len(fuentes)} fuente(s) activa(s), {len(proyectos)} proyecto(s) cargado(s).\n")
+    print(f"{len(fuentes)} fuente(s) RSS activa(s), {len(proyectos)} proyecto(s) cargado(s).\n")
 
     for fuente in fuentes:
         try:
             procesar_fuente(fuente, proyectos)
         except Exception as exc:
             print(f"  ! Error procesando {fuente['nombre']}: {exc}")
+
+    print()
+    procesar_categorias_automaticas(proyectos)
 
     print("\nListo.")
 

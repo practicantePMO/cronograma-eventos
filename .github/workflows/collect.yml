@@ -25,4 +25,5 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SEARXNG_URL: ${{ secrets.SEARXNG_URL }}
         run: python scraper/collect_events.py

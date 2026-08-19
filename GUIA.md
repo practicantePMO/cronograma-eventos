@@ -1,184 +1,174 @@
-# Guia paso a paso: Cronograma automatizado PMO
+# Guia paso a paso: Cronograma automatizado PMO (version SearXNG)
 
-Stack: **Supabase** (base de datos) + **GitHub Actions** (recoleccion automatica) +
-**Cloudflare Pages** (sitio web + contrasena compartida). Todo gratis, solo se
-necesita correo para cada cuenta (nada de Google/Microsoft).
+Stack final, 100% gratuito y sin depender de Google/Microsoft en ninguna parte:
 
-Tienes: VS Code, Docker, Python. Docker no se usa en este proyecto (todo corre en
-la nube gratis), pero Python si lo necesitas instalado localmente si quieres
-probar el scraper antes de subirlo.  
-
----
-
-## Parte 0 — Que vas a instalar/crear
-
-| Herramienta | Para que | Costo |
+| Pieza | Herramienta | Por que |
 |---|---|---|
-| Cuenta de GitHub | Guardar el codigo + correr el scraper automatico | Gratis |
-| Cuenta de Supabase | Base de datos | Gratis |
-| Cuenta de Cloudflare | Hospedar el sitio + contrasena | Gratis |
-| Git (si no lo tienes) | Subir el codigo a GitHub | Gratis |
-| Python 3.10+ (ya lo tienes) | Probar el scraper en tu maquina (opcional) | Gratis |
+| Base de datos | **Supabase** (Postgres) | Gratis, estable, cuenta con solo un correo |
+| Sitio + panel + contrasena | **Cloudflare Pages** + Functions | Gratis, sin limite de usuarios, sin cuenta de terceros para el equipo |
+| Automatizacion diaria | **GitHub Actions** | Gratis, corre el scraper solo |
+| Busqueda automatica de eventos por categoria | **SearXNG** (auto-hospedado en Render) | Open source, sin cuenta de terceros, sin limite diario, no depende de ninguna API que se pueda cerrar |
 
-Verifica que tengas Git instalado abriendo una terminal en VS Code y corriendo:
-```
-git --version
-```
-Si no aparece nada, descarga Git desde https://git-scm.com/downloads e instalalo
-(siguiente, siguiente, siguiente — no hay que configurar nada especial).
+Si ya tenias el proyecto anterior armado (con RSS/Google), **puedes borrar
+todo y empezar de cero con esta guia** sin ningun problema — no hay nada que
+migrar, la base de datos se recrea con el mismo `schema.sql`.
 
 ---
 
-## Parte 1 — Crear el proyecto en Supabase (la base de datos)
+## Parte 0 — Cuentas que vas a necesitar (todas gratis, solo con correo)
 
-1. Ve a https://supabase.com y crea una cuenta con tu correo (no hace falta Google).
-2. Click en **New project**.
-3. Ponle un nombre, ej. `pmo-cronograma`, y una contrasena de base de datos
-   (guardala en algun lado, no la volveras a ver).
-4. Espera 1-2 minutos a que se cree el proyecto.
-5. En el menu izquierdo, entra a **SQL Editor** → **New query**.
-6. Abre el archivo `supabase/schema.sql` de este proyecto, copia todo su
-   contenido, pegalo en el editor de Supabase, y dale **Run**.
-   Esto crea las tablas `proyectos`, `eventos`, `fuentes_verificadas` con la
-   seguridad configurada (el sitio puede leer, pero no escribir).
-
+1. **GitHub** — https://github.com (ya la tienes)
+2. **Supabase** — https://supabase.com (ya la tienes)
+3. **Cloudflare** — https://dash.cloudflare.com (ya la tienes)
+4. **Render** — https://render.com — **nueva**, la vamos a usar solo para
+   alojar SearXNG. Se crea con correo, sin tarjeta de credito.
 
 ---
 
-## Parte 2 — Subir el proyecto a GitHub
+## Parte 1 — Supabase (si empiezas de cero)
 
-1. Ve a https://github.com y crea una cuenta (si no tienes).
-2. Click en **New repository**. Nombralo `pmo-cronograma`, marcalo como
-   **Private** (asi solo tu equipo con acceso al repo lo ve), y creala.
-3. En VS Code, abre una terminal dentro de la carpeta `pmo-cronograma` que te
-   entregue y corre:
+1. Crea un proyecto nuevo en Supabase.
+2. Entra a **SQL Editor** → **New query**, pega el contenido de
+   `supabase/schema.sql`, dale **Run**.
+3. Ve a **Settings** → **Data API** para copiar tu **Project URL**, y a
+   **Settings** → **API Keys** para copiar tu **Publishable key** (antes
+   `anon`) y tu **Secret key** (antes `service_role`).
+
+Si ya tenias esto del intento anterior, no hace falta repetirlo — sigue igual.
+
+---
+
+## Parte 2 — Desplegar SearXNG en Render (la pieza nueva)
+
+Esto reemplaza por completo lo que intentamos con Google. Vamos paso a paso.
+
+1. **Antes de subir nada**, abre `searxng/settings.yml` en VS Code y cambia
+   la linea:
+   ```
+   secret_key: "REEMPLAZA_ESTO_POR_TU_PROPIA_CLAVE_ALEATORIA"
+   ```
+   Genera una clave propia corriendo esto en tu terminal (tienes Python
+   instalado, asi que funciona directo):
+   ```
+   python -c "import secrets; print(secrets.token_hex(32))"
+   ```
+   Copia el resultado y pegalo en el archivo, reemplazando el texto de
+   ejemplo (dejando las comillas).
+
+2. Sube el proyecto completo a GitHub (si ya tienes el repo, solo agrega los
+   archivos nuevos):
+   ```
+   git add .
+   git commit -m "Agregar SearXNG"
+   git push
+   ```
+
+3. Ve a https://dashboard.render.com → **New +** → **Web Service**.
+4. Conecta tu cuenta de GitHub y selecciona tu repositorio
+   `cronograma-eventos`.
+5. En la configuracion:
+   - **Root Directory**: `searxng`
+   - **Runtime**: Docker (Render lo detecta solo al ver el `Dockerfile`)
+   - **Instance Type**: Free
+6. Dale **Deploy Web Service**. La primera construccion tarda unos minutos.
+7. Cuando termine, Render te da una URL parecida a
+   `https://cronograma-searxng.onrender.com` — **copiala**, la vas a usar
+   como `SEARXNG_URL`.
+
+8. Pruebala abriendo en el navegador:
+   ```
+   https://TU-URL-DE-RENDER.onrender.com/search?q=test&format=json
+   ```
+   Si ves un JSON con resultados (no un error), esta funcionando.
+
+**Nota sobre el plan gratis de Render**: el servicio "se duerme" tras
+aproximadamente 15 minutos sin uso, y la siguiente vez que alguien lo llama
+tarda unos 30-50 segundos en "despertar". Para nuestro caso no es un
+problema — el scraper solo lo llama una vez al dia, y esos segundos de espera
+no afectan nada mas.
+
+---
+
+## Parte 3 — GitHub: subir el codigo y configurar los secrets
+
+1. Si no tienes el repo creado todavia, crealo en GitHub (privado) y sube el
+   proyecto:
    ```
    git init
    git add .
    git commit -m "Primer commit"
    git branch -M main
-   git remote add origin https://github.com/TU_USUARIO/pmo-cronograma.git
+   git remote add origin https://github.com/TU_USUARIO/TU_REPO.git
    git push -u origin main
    ```
-   (Te pedira iniciar sesion en GitHub la primera vez — sigue las instrucciones
-   en pantalla, es automatico).
 
-4. Ahora configura los "secrets" para que el scraper automatico funcione sin
-   exponer tus llaves: en GitHub, entra a tu repo → **Settings** →
-   **Secrets and variables** → **Actions** → **New repository secret**.
-   Crea dos secrets:
-   - `SUPABASE_URL` → pega tu Project URL de Supabase
-   - `SUPABASE_SERVICE_KEY` → pega tu service_role key de Supabase
+2. Ve a tu repo → **Settings** → **Secrets and variables** → **Actions** →
+   **New repository secret**, y crea estos tres:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_KEY`
+   - `SEARXNG_URL` → la URL de Render que copiaste en la Parte 2
 
-5. El archivo `.github/workflows/collect.yml` ya esta listo para correr todos
-   los dias a las 8am (hora Colombia) automaticamente. Tambien puedes probarlo
-   ya mismo manualmente: en tu repo, ve a la pestana **Actions** → selecciona
-   "Recolectar eventos PMO" → **Run workflow**.
+3. Prueba el workflow manualmente: pestana **Actions** → "Recolectar eventos
+   PMO" → **Run workflow**. Revisa los logs — deberia decir cuantas
+   categorias encontro y si guardo eventos nuevos.
 
 ---
 
-## Parte 3 — Agregar tus fuentes reales (RSS)
+## Parte 4 — Cloudflare Pages: el sitio, el panel y la contrasena
 
-Por ahora el `schema.sql` trae 2 fuentes de ejemplo. Para agregar las tuyas:
+1. Edita `site/index.html` y pon tu `SUPABASE_URL` y `SUPABASE_ANON_KEY`
+   (publishable key) reales, donde dice `CONFIGURA ESTO`.
 
-1. En Supabase, ve a **Table Editor** → tabla `fuentes_verificadas`.
-2. Click en **Insert row** y llena:
-   - `nombre`: como quieres identificarla, ej. "Google Alerts - Automatizacion"
-   - `tipo`: `rss`
-   - `url`: la URL del feed RSS
-   - `categorias`: ej. `{"automatizacion"}` (debe coincidir con las categorias
-     que le pusiste a tus proyectos)
-   - `activo`: `true`
-
-**Como conseguir URLs de RSS:**
-- **Google Alerts** (sin necesitar cuenta de Google — cualquiera puede crear
-  una alerta): ve a https://www.google.com/alerts, escribe tu termino de
-  busqueda, en "Mostrar opciones" cambia "Entregar en" a **Feed RSS**, y copia
-  la URL que te da.
-- **Sitios de noticias/blogs**: casi siempre es `sitio.com/feed` o
-  `sitio.com/rss`.
-- **Buscadores de RSS por tema**: https://hnrss.org (Hacker News filtrado por
-  palabra) es un buen ejemplo ya incluido.
-
----
-
-## Parte 4 — Publicar el sitio en Cloudflare Pages
-
-1. Ve a https://dash.cloudflare.com y crea una cuenta con tu correo.
-2. En el menu, busca **Workers & Pages** → **Create** → **Pages** →
-   **Connect to Git**.
-3. Conecta tu cuenta de GitHub y selecciona el repo `pmo-cronograma`.
-4. En la configuracion de build:
-   - **Build command**: dejalo vacio
+2. En Cloudflare → **Workers & Pages** → **Create** → **Pages** →
+   **Connect to Git** → selecciona tu repo.
+   - **Build command**: vacio
    - **Build output directory**: `site`
-5. Dale **Save and Deploy**. En 1-2 minutos te da una URL tipo
-   `pmo-cronograma.pages.dev`.
+   - Dale **Save and Deploy**.
 
-6. Antes de que el calendario muestre datos, edita `site/index.html` (linea
-   marcada `CONFIGURA ESTO`) y pon tu `SUPABASE_URL` y `SUPABASE_ANON_KEY`
-   reales (la llave **anon**, nunca la service_role). Guarda, sube el cambio:
+3. Ve a **Settings** → **Environment variables** del proyecto de Pages, y
+   agrega:
+   - `SITE_PASSWORD` → la contrasena compartida del equipo
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_KEY`
+   (Estas ultimas dos las necesitan `functions/api/proyectos.js` y
+   `functions/api/eventos.js` para que el panel funcione.)
+
+4. Vuelve a desplegar (Retry deployment, o haz otro `git push`).
+
+5. Sube todo con git:
    ```
    git add .
-   git commit -m "Configurar Supabase en el sitio"
+   git commit -m "Configurar Supabase y contrasena"
    git push
    ```
-   Cloudflare Pages vuelve a publicar automaticamente en cuanto detecta el push.
 
 ---
 
-## Parte 5 — Poner la contrasena compartida
+## Como queda funcionando todo, de punta a punta
 
-1. En Cloudflare, ve a tu proyecto de Pages → **Settings** →
-   **Environment variables**.
-2. Agrega una variable: `SITE_PASSWORD` con el valor que quieras como
-   contrasena del equipo (ej. `PMO2026seguro`).
-3. Marca que aplique para **Production**.
-4. Vuelve a desplegar (Cloudflare te da un boton **Retry deployment**, o basta
-   con hacer otro `git push`).
-
-El archivo `site/functions/_middleware.js` ya esta incluido en el proyecto y se
-activa automaticamente — Cloudflare Pages detecta cualquier archivo dentro de
-`functions/` y lo ejecuta antes de mostrar el sitio. No tienes que instalar
-nada mas para que esto funcione.
-
-Ahora, cuando alguien entre a tu URL, vera primero una pantalla pidiendo la
-contrasena. Si la escribe bien, entra al calendario y el navegador lo recuerda
-por 30 dias (no la vuelve a pedir en ese tiempo desde el mismo dispositivo).
-
----
-
-## Parte 6 — Agregar eventos manualmente
-
-Lo mas simple: entra a Supabase → **Table Editor** → tabla `eventos` →
-**Insert row**, y llena los campos (`titulo`, `fecha_inicio`, `proyecto_id`,
-`fuente_tipo` = `manual`, etc). Aparece en el calendario del sitio de
-inmediato, sin tener que tocar codigo.
-
-Si mas adelante quieres un formulario bonito dentro del propio sitio para que
-cualquiera del equipo agregue eventos sin entrar a Supabase, dimelo y lo
-armamos como siguiente paso — es una pagina HTML adicional con un formulario
-que llama a la API de Supabase.
-
----
-
-## Resumen de lo que queda corriendo solo
-
-- Todos los dias, GitHub Actions ejecuta el scraper → revisa tus fuentes RSS →
-  guarda eventos nuevos en Supabase (sin duplicar).
-- El sitio en Cloudflare Pages lee esos datos en tiempo real y los muestra en
-  el calendario.
-- Nadie externo puede ver el sitio sin la contrasena, y no aparece en buscadores.
-- Todo esto sin pagar nada, mientras el uso se mantenga dentro de los limites
-  gratuitos generosos de cada servicio (para 200 personas viendo un
-  calendario, estas muy lejos de esos limites).
+1. El equipo PMO entra a la URL de Cloudflare Pages, pone la contrasena
+   compartida, y ve el calendario.
+2. Desde el boton **"+ Agregar proyecto"** cualquiera crea un proyecto nuevo
+   con sus categorias, sin tocar Supabase ni saber programar.
+3. Todos los dias, GitHub Actions corre el scraper:
+   - Lee RSS que hayas configurado a mano (opcional).
+   - Busca automaticamente en tu SearXNG por cada categoria de cada
+     proyecto activo.
+   - Guarda los eventos nuevos en Supabase, sin duplicar.
+4. El sitio muestra todo en tiempo real.
+5. Nada de esto depende de una cuenta de Google, Microsoft, ni de una API
+   con fecha de cierre — cada pieza es o bien tuya (SearXNG, corriendo en tu
+   propio servicio de Render) o de proveedores con planes gratuitos estables
+   (Supabase, Cloudflare, GitHub).
 
 ## Si algo falla
-- **El calendario no muestra nada**: revisa que `SUPABASE_URL` y
-  `SUPABASE_ANON_KEY` en `index.html` sean correctos, y que la tabla `eventos`
-  tenga datos.
-- **El scraper no guarda nada**: ve a GitHub → Actions → abre la ultima
-  ejecucion y lee los logs, ahi dice exactamente que fuente fallo o si hay un
-  problema con las llaves.
-- **La contrasena no funciona**: confirma que la variable `SITE_PASSWORD` este
-  guardada en Cloudflare Pages y que hiciste un nuevo deploy despues de
-  agregarla.
+
+- **SearXNG no responde / tarda mucho**: es normal la primera vez tras estar
+  dormido (plan gratis de Render). Si sigue sin responder despues de 1
+  minuto, entra al dashboard de Render y revisa los logs del servicio.
+- **El scraper no encuentra eventos**: prueba la URL de busqueda de SearXNG
+  manualmente en el navegador (ver Parte 2, paso 8) para confirmar que trae
+  resultados para tu categoria.
+- **El panel da error al guardar un proyecto**: revisa que
+  `SUPABASE_SERVICE_KEY` este bien configurada en Cloudflare Pages (no en
+  GitHub — son configuraciones separadas, cada plataforma necesita la suya).

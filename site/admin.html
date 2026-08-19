@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Panel PMO - Cronograma</title>
+<style>
+  :root { --azul: #185fa5; --gris-fondo: #f6f5f2; --gris-borde: #d8d6cd; --texto: #2c2c2a; --verde:#2f7d4f; --rojo:#993c1d; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin:0; background: var(--gris-fondo); color: var(--texto); }
+  header { background:white; border-bottom:1px solid var(--gris-borde); padding:16px 24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header a { color: var(--azul); text-decoration:none; font-size:14px; }
+  main { max-width: 760px; margin: 24px auto; padding: 0 16px; display:flex; flex-direction:column; gap:24px; }
+  .tarjeta { background:white; border:1px solid var(--gris-borde); border-radius:12px; padding:20px; }
+  .tarjeta h2 { font-size:16px; margin:0 0 4px; }
+  .tarjeta p.ayuda { font-size:13px; color:#666; margin:0 0 16px; }
+  label { display:block; font-size:13px; font-weight:600; margin-bottom:4px; margin-top:12px; }
+  input, select, textarea { width:100%; padding:9px 10px; border:1px solid var(--gris-borde); border-radius:8px; font-size:14px; font-family:inherit; }
+  textarea { resize: vertical; min-height:60px; }
+  button { margin-top:16px; padding:10px 18px; background: var(--azul); color:white; border:none; border-radius:8px; font-size:14px; cursor:pointer; }
+  button:hover { opacity:0.92; }
+  .mensaje { margin-top:12px; font-size:13px; padding:8px 10px; border-radius:8px; display:none; }
+  .mensaje.ok { display:block; background:#e6f4ea; color: var(--verde); }
+  .mensaje.error { display:block; background:#fbe9e4; color: var(--rojo); }
+  table { width:100%; border-collapse: collapse; margin-top:8px; font-size:13px; }
+  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--gris-borde); }
+  .tag { display:inline-block; background:#eef2f7; border-radius:6px; padding:2px 6px; margin:1px; font-size:12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Panel PMO</h1>
+  <a href="/">&larr; Ver cronograma</a>
+</header>
+
+<main>
+
+  <div class="tarjeta">
+    <h2>Nuevo proyecto</h2>
+    <p class="ayuda">Agrega un proyecto con sus categorias/temas. El recolector automatico buscara eventos para cada categoria nueva sin que tengas que hacer nada mas.</p>
+    <form id="formProyecto">
+      <label>Codigo interno (ej. AT-05)</label>
+      <input type="text" id="p_codigo" required />
+
+      <label>Nombre del proyecto</label>
+      <input type="text" id="p_nombre" required />
+
+      <label>Categorias / temas (separados por coma)</label>
+      <input type="text" id="p_categorias" placeholder="ej. automatizacion, rpa" required />
+
+      <button type="submit">Guardar proyecto</button>
+      <div class="mensaje" id="msgProyecto"></div>
+    </form>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Agregar evento manual</h2>
+    <p class="ayuda">Para reuniones internas o eventos que el rastreo automatico no captura.</p>
+    <form id="formEvento">
+      <label>Titulo</label>
+      <input type="text" id="e_titulo" required />
+
+      <label>Proyecto</label>
+      <select id="e_proyecto"><option value="">(sin asociar a un proyecto)</option></select>
+
+      <label>Fecha y hora</label>
+      <input type="datetime-local" id="e_fecha" required />
+
+      <label>Categoria (opcional)</label>
+      <input type="text" id="e_categoria" placeholder="ej. automatizacion" />
+
+      <label>Descripcion (opcional)</label>
+      <textarea id="e_descripcion"></textarea>
+
+      <label>Enlace (opcional)</label>
+      <input type="url" id="e_url" placeholder="https://..." />
+
+      <button type="submit">Guardar evento</button>
+      <div class="mensaje" id="msgEvento"></div>
+    </form>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Proyectos existentes</h2>
+    <table id="tablaProyectos">
+      <thead><tr><th>Codigo</th><th>Nombre</th><th>Categorias</th><th>Estado</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+</main>
+
+<script>
+  async function cargarProyectos() {
+    const resp = await fetch("/api/proyectos");
+    const proyectos = await resp.json();
+
+    const tbody = document.querySelector("#tablaProyectos tbody");
+    tbody.innerHTML = "";
+    const select = document.getElementById("e_proyecto");
+    select.innerHTML = '<option value="">(sin asociar a un proyecto)</option>';
+
+    proyectos.forEach(p => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = "<td>" + p.codigo + "</td><td>" + p.nombre + "</td><td>" +
+        (p.categorias || []).map(c => '<span class="tag">' + c + '</span>').join("") +
+        "</td><td>" + p.estado + "</td>";
+      tbody.appendChild(tr);
+
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.codigo + " - " + p.nombre;
+      select.appendChild(opt);
+    });
+  }
+
+  function mostrarMensaje(el, texto, ok) {
+    el.textContent = texto;
+    el.className = "mensaje " + (ok ? "ok" : "error");
+  }
+
+  document.getElementById("formProyecto").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById("msgProyecto");
+    const body = {
+      codigo: document.getElementById("p_codigo").value,
+      nombre: document.getElementById("p_nombre").value,
+      categorias: document.getElementById("p_categorias").value,
+    };
+    const resp = await fetch("/api/proyectos", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      mostrarMensaje(msg, "Proyecto guardado correctamente.", true);
+      e.target.reset();
+      cargarProyectos();
+    } else {
+      mostrarMensaje(msg, data.error || "Error al guardar.", false);
+    }
+  });
+
+  document.getElementById("formEvento").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById("msgEvento");
+    const fechaLocal = document.getElementById("e_fecha").value;
+    const body = {
+      titulo: document.getElementById("e_titulo").value,
+      proyecto_id: document.getElementById("e_proyecto").value || null,
+      fecha_inicio: fechaLocal ? new Date(fechaLocal).toISOString() : null,
+      categoria: document.getElementById("e_categoria").value,
+      descripcion: document.getElementById("e_descripcion").value,
+      url: document.getElementById("e_url").value,
+    };
+    const resp = await fetch("/api/eventos", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      mostrarMensaje(msg, "Evento guardado correctamente.", true);
+      e.target.reset();
+    } else {
+      mostrarMensaje(msg, data.error || "Error al guardar.", false);
+    }
+  });
+
+  cargarProyectos();
+</script>
+</body>
+</html>
