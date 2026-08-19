@@ -48,10 +48,30 @@ if not SEARXNG_URL:
 # Palabras que deben aparecer en el titulo o descripcion para considerar que
 # un resultado de busqueda SI es un evento real (y no un articulo generico).
 PALABRAS_EVENTO = [
-    "evento", "eventos", "webinar", "bootcamp", "conferencia", "congreso",
-    "seminario", "taller", "curso", "certificacion", "certificación",
-    "inscripciones", "inscripcion", "inscripción", "meetup", "summit",
-    "foro", "jornada", "capacitacion", "capacitación",
+    "webinar", "webinars", "conferencia", "conference", "congreso",
+    "seminario", "seminar", "summit", "simposio", "symposium",
+    "jornada", "foro", "forum", "workshop", "taller online",
+    "evento virtual", "evento online", "sesion online", "sesión online",
+    "live session", "online event", "virtual event", "masterclass",
+]
+
+# Dominios que casi nunca son eventos reales (repos de codigo, agregadores de
+# noticias, tiendas, etc.). Si un resultado viene de aqui, se descarta.
+DOMINIOS_EXCLUIDOS = [
+    "github.com", "gitlab.com", "news.ycombinator.com", "reddit.com",
+    "stackoverflow.com", "medium.com", "youtube.com", "amazon.",
+    "wikipedia.org", "facebook.com", "twitter.com", "x.com",
+    "linkedin.com/pulse", "pinterest.", "instagram.com",
+]
+
+# Para que un resultado de busqueda cuente como evento, ademas de traer una
+# palabra-evento, exigimos que tenga alguna senal de fecha o de accion tipica
+# de evento (registrarse, agendar, etc.). Esto sube mucho la calidad.
+SENALES_FECHA = [
+    "2026", "2027", "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+    "register", "registro", "regístrate", "regis", "agenda", "agéndate",
+    "inscrib", "proximamente", "próximamente", "en vivo", "live",
 ]
 
 HEADERS = {
@@ -156,23 +176,42 @@ def procesar_fuente(fuente, proyectos):
         insertar_evento(evento)
 
 
-def parece_evento(titulo, descripcion):
+def parece_evento(titulo, descripcion, url):
     texto = f"{titulo} {descripcion}".lower()
-    return any(palabra in texto for palabra in PALABRAS_EVENTO)
+    url_lower = url.lower()
+
+    # 1. Descartar dominios que casi nunca son eventos.
+    if any(dom in url_lower for dom in DOMINIOS_EXCLUIDOS):
+        return False
+
+    # 2. Debe traer al menos una palabra clara de evento.
+    if not any(palabra in texto for palabra in PALABRAS_EVENTO):
+        return False
+
+    # 3. Ademas debe traer alguna senal de fecha o de accion de evento.
+    #    Esto filtra paginas genericas que solo mencionan la palabra "webinar"
+    #    de pasada (ej. una landing de un servicio pago).
+    if not any(senal in texto for senal in SENALES_FECHA):
+        return False
+
+    return True
 
 
 def buscar_por_categoria(categoria, proyecto_id):
     """
     Busca eventos sobre una categoria usando tu propia instancia de SearXNG
     (auto-hospedada, JSON, sin cuenta ni limite diario de cuota).
+
+    Estrategia enfocada en WEBINARS y CONFERENCIAS ONLINE con calidad sobre
+    cantidad: consultas dirigidas + filtro estricto (parece_evento).
     """
     if not SEARXNG_URL:
         return
 
     consultas = [
-        f"eventos {categoria}",
-        f"bootcamp {categoria}",
-        f"webinar {categoria} inscripciones",
+        f"webinar {categoria} 2026 registro",
+        f"conferencia online {categoria} 2026",
+        f'"{categoria}" webinar gratuito inscripcion',
     ]
 
     for consulta in consultas:
@@ -195,8 +234,8 @@ def buscar_por_categoria(categoria, proyecto_id):
 
             if not titulo or not url:
                 continue
-            if not parece_evento(titulo, descripcion):
-                continue  # descarta resultados que no parecen eventos reales
+            if not parece_evento(titulo, descripcion, url):
+                continue  # descarta lo que no parece un evento real
 
             evento = {
                 "titulo": titulo,

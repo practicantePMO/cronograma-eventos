@@ -139,7 +139,7 @@
 
   function abrirModal(evento) {
     document.getElementById("modalTitulo").textContent = evento.title;
-    document.getElementById("modalDescripcion").textContent = evento.extendedProps.descripcion || "Sin descripcion.";
+    document.getElementById("modalDescripcion").textContent = limpiarHTML(evento.extendedProps.descripcion) || "Sin descripcion.";
     const meta = [];
     if (evento.extendedProps.categoria) meta.push(`Categoria: ${evento.extendedProps.categoria}`);
     if (evento.extendedProps.fuente_nombre) meta.push(`Fuente: ${evento.extendedProps.fuente_nombre}`);
@@ -148,6 +148,15 @@
     document.getElementById("modal").style.display = "flex";
   }
   function cerrarModal() { document.getElementById("modal").style.display = "none"; }
+
+  // Quita etiquetas HTML de las descripciones que vienen de los feeds RSS,
+  // dejando solo el texto legible.
+  function limpiarHTML(texto) {
+    if (!texto) return "";
+    const tmp = document.createElement("div");
+    tmp.innerHTML = texto;
+    return (tmp.textContent || tmp.innerText || "").trim();
+  }
 
   (async function init() {
     const { eventos, proyectos } = await cargarDatos();

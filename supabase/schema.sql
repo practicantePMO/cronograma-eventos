@@ -77,6 +77,23 @@ insert into proyectos (codigo, nombre, categorias) values
 on conflict (codigo) do nothing;
 
 insert into fuentes_verificadas (nombre, tipo, url, categorias) values
-  ('Google Alerts - Automatizacion (ejemplo)', 'rss', 'https://www.google.com/alerts/feeds/TU_ID_AQUI/TU_FEED_AQUI', array['automatizacion']),
-  ('Hacker News RSS (ejemplo)', 'rss', 'https://hnrss.org/newest?q=automation', array['automatizacion','ia'])
+  ('Gartner Webinars (webinars gratuitos de tecnologia y negocio)', 'rss', 'https://www.gartner.com/technology/webinars/rss/', array['ia','transformacion digital','automatizacion','ciberseguridad'])
 on conflict do nothing;
+
+-- NOTA sobre fuentes:
+-- La estrategia de este proyecto es "webinars y conferencias online, calidad
+-- sobre cantidad". La mejor forma de lograrlo es agregar aqui fuentes RSS que
+-- de por si SOLO publican webinars/eventos (como el feed de Gartner de arriba),
+-- porque asi todo lo que entra ya es un evento real.
+--
+-- Puedes agregar mas fuentes de este tipo desde el Table Editor de Supabase.
+-- Algunas ideas de sitios que publican webinars/conferencias con RSS o pagina
+-- de "proximos eventos" que puedas convertir a RSS:
+--   - Blogs/portales de proveedores de software de tu sector (ellos publican
+--     sus propios webinars).
+--   - Camaras/asociaciones gremiales de tu industria.
+--   - Universidades con educacion continua en tus temas.
+--
+-- La busqueda automatica por SearXNG sigue funcionando como complemento, pero
+-- con un filtro estricto que exige senales de evento + fecha, y que descarta
+-- dominios como github.com que no son eventos.
