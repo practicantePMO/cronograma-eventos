@@ -486,6 +486,7 @@ def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
         consultas.append(f"site:{dominio} {categoria} 2026")
 
     total_insertados = 0
+    dominios_rechazados = {}  # dominio -> cuantas veces aparecio y se rechazo
 
     for consulta in consultas:
         try:
@@ -519,6 +520,9 @@ def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
             ok, motivo = parece_evento(titulo, descripcion, url, dominios_permitidos)
             if not ok:
                 motivos[motivo] = motivos.get(motivo, 0) + 1
+                if motivo == "dominio_no_verificado":
+                    dom = dominio_de_url(url)
+                    dominios_rechazados[dom] = dominios_rechazados.get(dom, 0) + 1
                 continue
 
             # Solo insertamos si detectamos una fecha real en el texto. Antes,
@@ -556,10 +560,14 @@ def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
         print(f"    '{consulta}' -> {len(resultados)} resultado(s) crudos, "
               f"{insertados_consulta} insertado(s). Descartes: {resumen_motivos}")
 
+    if dominios_rechazados:
+        top = sorted(dominios_rechazados.items(), key=lambda x: -x[1])[:8]
+        top_texto = ", ".join(f"{d} ({n})" for d, n in top)
+        print(f"  Dominios NO verificados que aparecieron para '{categoria}' (candidatos a agregar "
+              f"a dominios_verificados si son de fiar): {top_texto}")
+
     if total_insertados == 0:
-        print(f"  (0 eventos nuevos para '{categoria}'. Revisa arriba que dominio_no_verificado / "
-              f"sin_fecha_detectada no este dominando: si es asi, hay que ampliar la lista de "
-              f"dominios_verificados o revisar que SEARXNG_URL este respondiendo bien.)")
+        print(f"  (0 eventos nuevos para '{categoria}'.)")
 
 
 def procesar_categorias_automaticas(proyectos, dominios_permitidos):
