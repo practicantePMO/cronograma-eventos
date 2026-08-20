@@ -199,10 +199,6 @@ def procesar_fuente(fuente, proyectos):
 
         resumen = entry.get("summary", "")[:500]
 
-        # Descartar si el texto menciona una fecha explicita que ya paso.
-        if fecha_ya_paso(f"{titulo} {resumen}".lower()):
-            continue
-
         # Fecha para el calendario: preferimos una fecha detectada en el texto;
         # si no hay, usamos la fecha de publicacion del feed; si tampoco, hoy.
         fecha_detectada = extraer_fecha_del_texto(f"{titulo} {resumen}".lower())
@@ -212,6 +208,14 @@ def procesar_fuente(fuente, proyectos):
             fecha = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
         else:
             fecha = datetime.now(timezone.utc)
+
+        # Descartar si la fecha FINAL que vamos a guardar ya paso. Se valida
+        # aqui, sobre "fecha" (no solo sobre el texto), porque la fecha de
+        # publicacion del feed (el fallback de arriba) casi siempre es una
+        # fecha vieja del articulo, no la fecha real del evento: si no se
+        # revisa aca, un articulo publicado hace semanas se cuela igual.
+        if fecha.date() < datetime.now(timezone.utc).date():
+            continue
 
         categoria = fuente["categorias"][0] if fuente.get("categorias") else None
         proyecto_id = proyecto_para_categoria(categoria, proyectos)
@@ -421,12 +425,17 @@ def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
             # Si detectamos una fecha real en el texto, la usamos; si no,
             # usamos "hoy" para que al menos aparezca en el calendario.
             fecha_detectada = extraer_fecha_del_texto(f"{titulo} {descripcion}".lower())
-            fecha_evento = (fecha_detectada or datetime.now(timezone.utc)).isoformat()
+            fecha_evento_dt = fecha_detectada or datetime.now(timezone.utc)
+
+            # Chequeo final (misma logica que en procesar_fuente): nunca
+            # insertar si la fecha que vamos a guardar ya paso.
+            if fecha_evento_dt.date() < datetime.now(timezone.utc).date():
+                continue
 
             evento = {
                 "titulo": titulo,
                 "descripcion": descripcion,
-                "fecha_inicio": fecha_evento,
+                "fecha_inicio": fecha_evento_dt.isoformat(),
                 "categoria": categoria,
                 "fuente_tipo": "automatico",
                 "fuente_nombre": "Busqueda automatica (SearXNG)",

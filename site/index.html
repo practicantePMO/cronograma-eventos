@@ -220,8 +220,15 @@
   let diaSeleccionado = formatoFecha(new Date());
 
   async function cargarDatos() {
+    // Red de seguridad: aunque el scraper ya filtra eventos pasados antes de
+    // guardarlos, el sitio tampoco pide ni muestra nada con fecha anterior a
+    // hoy. Asi, aunque algo viejo quede en la base (o se cargue manualmente
+    // por error), nunca aparece en el cronograma.
+    const inicioHoy = new Date();
+    inicioHoy.setHours(0, 0, 0, 0);
+
     const [eventosRes, proyectosRes] = await Promise.all([
-      fetch(`${SUPABASE_URL}/rest/v1/eventos?select=*`, {
+      fetch(`${SUPABASE_URL}/rest/v1/eventos?select=*&fecha_inicio=gte.${inicioHoy.toISOString()}&order=fecha_inicio.asc`, {
         headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
       }),
       fetch(`${SUPABASE_URL}/rest/v1/proyectos?select=*`, {
