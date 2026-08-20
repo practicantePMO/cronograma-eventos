@@ -197,10 +197,15 @@ def procesar_fuente(fuente, proyectos):
         print(f"  ! No se pudo leer el feed (revisa la URL): {fuente['url']}")
         return
 
+    total_entradas = len(feed.entries[:30])
+    motivos = {}
+    insertados = 0
+
     for entry in feed.entries[:30]:  # limite de seguridad por corrida
         titulo = entry.get("title", "").strip()
         url = entry.get("link", "").strip()
         if not titulo or not url:
+            motivos["sin_titulo_o_url"] = motivos.get("sin_titulo_o_url", 0) + 1
             continue
 
         resumen = entry.get("summary", "")[:500]
@@ -208,6 +213,7 @@ def procesar_fuente(fuente, proyectos):
         # Descartar recursos que claramente no son una pagina de evento
         # (sitemaps, feeds, homepages genericas sin informacion puntual).
         if es_recurso_basura(titulo, url):
+            motivos["recurso_basura"] = motivos.get("recurso_basura", 0) + 1
             continue
 
         # Fecha para el calendario: SOLO usamos una fecha si la detectamos de
@@ -219,10 +225,12 @@ def procesar_fuente(fuente, proyectos):
         # Es mejor NO mostrar el evento que mostrarlo con una fecha inventada.
         fecha = extraer_fecha_del_texto(f"{titulo} {resumen}".lower())
         if fecha is None:
+            motivos["sin_fecha_detectada"] = motivos.get("sin_fecha_detectada", 0) + 1
             continue
 
         # Descartar si la fecha detectada ya paso.
         if fecha.date() < datetime.now(timezone.utc).date():
+            motivos["fecha_ya_paso"] = motivos.get("fecha_ya_paso", 0) + 1
             continue
 
         categoria = fuente["categorias"][0] if fuente.get("categorias") else None
@@ -241,6 +249,10 @@ def procesar_fuente(fuente, proyectos):
             "es_gratuito": es_gratuito(titulo, resumen),
         }
         insertar_evento(evento)
+        insertados += 1
+
+    resumen_motivos = ", ".join(f"{k}:{v}" for k, v in motivos.items()) or "sin descartes"
+    print(f"  {total_entradas} entrada(s) del feed, {insertados} insertada(s). Descartes: {resumen_motivos}")
 
 
 # Meses en espanol e ingles para detectar fechas escritas en el texto.
@@ -394,42 +406,48 @@ def parece_pagina_de_empresa(titulo, descripcion):
 
 
 def parece_evento(titulo, descripcion, url, dominios_permitidos):
+    """
+    Devuelve (True, None) si parece un evento/curso valido, o (False, motivo)
+    si se descarta -- el motivo se usa solo para contar/loguear por que se
+    esta rechazando cada resultado, y poder diagnosticar el filtro.
+    """
     texto = f"{titulo} {descripcion}".lower()
     url_lower = url.lower()
 
     # 1. Descartar dominios que casi nunca son eventos.
     if any(dom in url_lower for dom in DOMINIOS_EXCLUIDOS):
-        return False
+        return False, "dominio_excluido"
 
     # 2. FILTRO FUERTE: el dominio debe estar verificado por ti (tabla
-    #    dominios_verificados) o ser institucional (.edu/.gob/.gov/.org).
+    #    dominios_verificados) o ser un dominio de gobierno restringido.
     #    Esto es lo que evita que se cuelen paginas de empresas que venden
     #    cursos/servicios: si el sitio no esta en tu lista aprobada, no pasa,
     #    sin importar como este redactado el texto.
     if not dominio_verificado(url, dominios_permitidos):
-        return False
+        return False, "dominio_no_verificado"
 
     # 3. Debe traer al menos una palabra clara de evento/curso/bootcamp.
     if not any(palabra in texto for palabra in PALABRAS_EVENTO):
-        return False
+        return False, "sin_palabra_evento"
 
     # 4. Ademas debe traer alguna senal de fecha o de accion de evento.
     #    Esto filtra paginas genericas que solo mencionan la palabra "webinar"
     #    de pasada.
     if not any(senal in texto for senal in SENALES_FECHA):
-        return False
+        return False, "sin_senal_fecha"
 
     # 5. Descartar si ademas parece una landing page de empresa (senal extra,
     #    por si un sitio verificado tiene tambien paginas de venta mezcladas).
     if parece_pagina_de_empresa(titulo, descripcion):
-        return False
+        return False, "parece_pagina_empresa"
 
     # 6. Descartar si detectamos una fecha y esa fecha YA paso.
-    #    (Si no hay fecha detectable, se deja pasar, segun tu preferencia.)
+    #    (Si no hay fecha detectable, se deja pasar; el chequeo de fecha real
+    #    y obligatoria pasa despues, al momento de insertar.)
     if fecha_ya_paso(texto):
-        return False
+        return False, "fecha_ya_paso"
 
-    return True
+    return True, None
 
 
 def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
@@ -442,6 +460,10 @@ def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
     bootcamps (con enfasis en gratuitos), organizadas por sitio via "site:"
     cuando hay dominios verificados, + filtro estricto (parece_evento), que
     exige que el dominio este en tu lista blanca.
+
+    Imprime un resumen de CUANTOS resultados se descartaron y POR QUE en
+    cada consulta, para poder diagnosticar si el filtro esta demasiado
+    estricto (revisa los logs de la Action si un dia no aparece nada nuevo).
     """
     if not SEARXNG_URL:
         return
@@ -456,9 +478,14 @@ def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
     # Si ya tenemos dominios verificados, dirigimos las busquedas a esos
     # sitios especificos con "site:" -> resultados de mucha mas calidad,
     # porque le pedimos al buscador que solo mire sitios que tu aprobaste.
+    # (Consulta simple, sin "OR": no todos los motores detras de SearXNG
+    # interpretan el operador booleano igual, y una consulta simple trae
+    # mas resultados que una mal interpretada.)
     consultas = list(consultas_base)
-    for dominio in dominios_permitidos[:6]:  # limite de seguridad por corrida
-        consultas.append(f"site:{dominio} {categoria} bootcamp OR curso OR webinar 2026")
+    for dominio in dominios_permitidos[:10]:  # limite de seguridad por corrida
+        consultas.append(f"site:{dominio} {categoria} 2026")
+
+    total_insertados = 0
 
     for consulta in consultas:
         try:
@@ -473,17 +500,26 @@ def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
             print(f"  ! Error buscando '{consulta}': {exc}")
             continue
 
-        for item in data.get("results", [])[:8]:  # limite por consulta
+        resultados = data.get("results", [])[:8]  # limite por consulta
+        motivos = {}
+        insertados_consulta = 0
+
+        for item in resultados:
             titulo = (item.get("title") or "").strip()
             url = (item.get("url") or "").strip()
             descripcion = (item.get("content") or "")[:500]
 
             if not titulo or not url:
+                motivos["sin_titulo_o_url"] = motivos.get("sin_titulo_o_url", 0) + 1
                 continue
             if es_recurso_basura(titulo, url):
+                motivos["recurso_basura"] = motivos.get("recurso_basura", 0) + 1
                 continue
-            if not parece_evento(titulo, descripcion, url, dominios_permitidos):
-                continue  # descarta lo que no parece un evento/curso real de un sitio verificado
+
+            ok, motivo = parece_evento(titulo, descripcion, url, dominios_permitidos)
+            if not ok:
+                motivos[motivo] = motivos.get(motivo, 0) + 1
+                continue
 
             # Solo insertamos si detectamos una fecha real en el texto. Antes,
             # si no se detectaba, se usaba "hoy" como reemplazo -- eso hacia
@@ -492,10 +528,12 @@ def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
             # vieran vencidas casi de inmediato. Mejor descartar que inventar.
             fecha_evento_dt = extraer_fecha_del_texto(f"{titulo} {descripcion}".lower())
             if fecha_evento_dt is None:
+                motivos["sin_fecha_detectada"] = motivos.get("sin_fecha_detectada", 0) + 1
                 continue
 
             # Chequeo final: nunca insertar si la fecha ya paso.
             if fecha_evento_dt.date() < datetime.now(timezone.utc).date():
+                motivos["fecha_final_vencida"] = motivos.get("fecha_final_vencida", 0) + 1
                 continue
 
             evento = {
@@ -511,6 +549,17 @@ def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
                 "es_gratuito": es_gratuito(titulo, descripcion),
             }
             insertar_evento(evento)
+            insertados_consulta += 1
+            total_insertados += 1
+
+        resumen_motivos = ", ".join(f"{k}:{v}" for k, v in motivos.items()) or "sin descartes"
+        print(f"    '{consulta}' -> {len(resultados)} resultado(s) crudos, "
+              f"{insertados_consulta} insertado(s). Descartes: {resumen_motivos}")
+
+    if total_insertados == 0:
+        print(f"  (0 eventos nuevos para '{categoria}'. Revisa arriba que dominio_no_verificado / "
+              f"sin_fecha_detectada no este dominando: si es asi, hay que ampliar la lista de "
+              f"dominios_verificados o revisar que SEARXNG_URL este respondiendo bien.)")
 
 
 def procesar_categorias_automaticas(proyectos, dominios_permitidos):
