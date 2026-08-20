@@ -81,12 +81,18 @@ DOMINIOS_EXCLUIDOS = [
     "linkedin.com/pulse", "pinterest.", "instagram.com",
 ]
 
-# Sufijos de dominio institucionales que se aceptan aunque el dominio exacto
-# no este en la tabla "dominios_verificados" (universidades, gobierno, ONGs).
+# Sufijos de dominio que se aceptan automaticamente SIN estar en la tabla
+# dominios_verificados. Se dejan MUY pocos y solo los realmente restringidos
+# (dominios de gobierno, que normalmente exigen ser una entidad oficial para
+# registrarse). NO se incluye .org ni .edu: son TLDs de registro libre --
+# cualquiera puede comprar un .org (por eso se colaban paginas de congresos
+# random como "roboticsconference.org" sin pasar por tu lista blanca). Si
+# quieres confiar en una universidad o entidad .edu especifica, agregala a
+# mano en la tabla dominios_verificados (ya estan sena.edu.co, unal.edu.co,
+# uniandes.edu.co, javeriana.edu.co en el parche).
 SUFIJOS_INSTITUCIONALES = (
-    ".edu", ".edu.co", ".edu.mx", ".edu.ar", ".edu.pe", ".edu.cl",
-    ".gob.co", ".gob.mx", ".gob.pe", ".gob.ar", ".gov.co", ".gov", ".gob",
-    ".org",
+    ".gov", ".gov.co", ".gob", ".gob.co", ".gob.mx", ".gob.pe", ".gob.ar",
+    ".mil",
 )
 
 # Para que un resultado de busqueda cuente como evento, ademas de traer una
@@ -199,21 +205,23 @@ def procesar_fuente(fuente, proyectos):
 
         resumen = entry.get("summary", "")[:500]
 
-        # Fecha para el calendario: preferimos una fecha detectada en el texto;
-        # si no hay, usamos la fecha de publicacion del feed; si tampoco, hoy.
-        fecha_detectada = extraer_fecha_del_texto(f"{titulo} {resumen}".lower())
-        if fecha_detectada:
-            fecha = fecha_detectada
-        elif getattr(entry, "published_parsed", None):
-            fecha = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-        else:
-            fecha = datetime.now(timezone.utc)
+        # Descartar recursos que claramente no son una pagina de evento
+        # (sitemaps, feeds, homepages genericas sin informacion puntual).
+        if es_recurso_basura(titulo, url):
+            continue
 
-        # Descartar si la fecha FINAL que vamos a guardar ya paso. Se valida
-        # aqui, sobre "fecha" (no solo sobre el texto), porque la fecha de
-        # publicacion del feed (el fallback de arriba) casi siempre es una
-        # fecha vieja del articulo, no la fecha real del evento: si no se
-        # revisa aca, un articulo publicado hace semanas se cuela igual.
+        # Fecha para el calendario: SOLO usamos una fecha si la detectamos de
+        # verdad en el texto. Antes, si no se detectaba, se usaba la fecha de
+        # publicacion del feed (o "ahora mismo") como reemplazo -- eso hacia
+        # que paginas genericas (sin fecha real de evento) aparecieran
+        # marcadas como si fueran "hoy", y como esa hora ya paso segundos
+        # despues de guardarse, se veian como eventos vencidos de inmediato.
+        # Es mejor NO mostrar el evento que mostrarlo con una fecha inventada.
+        fecha = extraer_fecha_del_texto(f"{titulo} {resumen}".lower())
+        if fecha is None:
+            continue
+
+        # Descartar si la fecha detectada ya paso.
         if fecha.date() < datetime.now(timezone.utc).date():
             continue
 
@@ -245,6 +253,9 @@ MESES = {
     "december": 12,
     "ene": 1, "feb": 2, "mar": 3, "abr": 4, "jun": 6, "jul": 7, "ago": 8,
     "sep": 9, "oct": 10, "nov": 11, "dic": 12,
+    # Abreviaturas en ingles que faltaban (causaban que fechas como
+    # "Aug 27, 2026" o "Sept 2026" no se reconocieran).
+    "jan": 1, "apr": 4, "aug": 8, "sept": 9, "dec": 12,
 }
 
 # Frases tipicas de una landing page de empresa (no de un evento puntual).
@@ -290,11 +301,31 @@ def es_gratuito(titulo, descripcion):
     return any(palabra in texto for palabra in PALABRAS_GRATIS)
 
 
+def es_recurso_basura(titulo, url):
+    """
+    Descarta resultados que claramente no son una pagina de evento/curso:
+    sitemaps, feeds XML/JSON, o titulos que son directamente la URL cruda
+    (senal de que el buscador no encontro un <title> real en la pagina).
+    """
+    url_lower = url.lower()
+    titulo_lower = titulo.lower().strip()
+
+    if any(url_lower.endswith(ext) for ext in (".xml", ".json", ".rss", ".atom", ".txt")):
+        return True
+    if "sitemap" in url_lower or "/feed" in url_lower:
+        return True
+    if titulo_lower.startswith("http://") or titulo_lower.startswith("https://"):
+        return True
+    if titulo_lower in ("homepage", "home", "inicio") or titulo_lower.endswith("- homepage"):
+        return True
+    return False
+
+
 def extraer_fecha_del_texto(texto):
     """
-    Intenta encontrar una fecha en el texto (ej. "15 de marzo de 2026" o
-    "March 15, 2026"). Devuelve un datetime con dia 1 si solo encuentra
-    mes+ano, o None si no encuentra nada confiable.
+    Intenta encontrar una fecha en el texto (ej. "15 de marzo de 2026",
+    "March 15, 2026" o "June 27 - 30, 2026"). Devuelve un datetime con dia 1
+    si solo encuentra mes+ano, o None si no encuentra nada confiable.
     """
     t = texto.lower()
 
@@ -306,12 +337,42 @@ def extraer_fecha_del_texto(texto):
         except ValueError:
             pass
 
+    # Patron: "27 junio 2026" (sin la palabra "de", comun en resumenes en ingles/es mezclados)
+    m = re.search(r"(\d{1,2})\s+([a-záéíóú]+)\s+(\d{4})", t)
+    if m and m.group(2) in MESES:
+        try:
+            return datetime(int(m.group(3)), MESES[m.group(2)], int(m.group(1)), tzinfo=timezone.utc)
+        except ValueError:
+            pass
+
+    # Patron: "june 27 - 30, 2026" / "june 27–30 2026" (rango de dias, se usa
+    # el primer dia del rango, que es cuando arranca el evento).
+    m = re.search(r"([a-z]+)\s+(\d{1,2})\s*[-–—]\s*\d{1,2},?\s*(\d{4})", t)
+    if m and m.group(1) in MESES:
+        try:
+            return datetime(int(m.group(3)), MESES[m.group(1)], int(m.group(2)), tzinfo=timezone.utc)
+        except ValueError:
+            pass
+
     # Patron: "march 15, 2026" / "march 2026"
     m = re.search(r"([a-z]+)\s+(\d{1,2})?,?\s*(\d{4})", t)
     if m and m.group(1) in MESES:
         try:
             dia = int(m.group(2)) if m.group(2) else 1
             return datetime(int(m.group(3)), MESES[m.group(1)], dia, tzinfo=timezone.utc)
+        except ValueError:
+            pass
+
+    # Ultimo intento: a veces el mes+dia y el ano aparecen en el mismo texto
+    # pero NO pegados (ej. "BOMA 2026 International Conference | June 27-30":
+    # el ano esta al principio del titulo, la fecha al final). Buscamos un
+    # mes+dia por un lado y un ano plausible (2024-2035) por otro lado, y si
+    # ambos aparecen, los combinamos.
+    m_mes_dia = re.search(r"\b([a-z]{3,9})\.?\s+(\d{1,2})(?:\s*[-–—]\s*\d{1,2})?\b", t)
+    m_anio = re.search(r"\b(202[4-9]|203[0-5])\b", t)
+    if m_mes_dia and m_anio and m_mes_dia.group(1) in MESES:
+        try:
+            return datetime(int(m_anio.group(1)), MESES[m_mes_dia.group(1)], int(m_mes_dia.group(2)), tzinfo=timezone.utc)
         except ValueError:
             pass
 
@@ -419,16 +480,21 @@ def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
 
             if not titulo or not url:
                 continue
+            if es_recurso_basura(titulo, url):
+                continue
             if not parece_evento(titulo, descripcion, url, dominios_permitidos):
                 continue  # descarta lo que no parece un evento/curso real de un sitio verificado
 
-            # Si detectamos una fecha real en el texto, la usamos; si no,
-            # usamos "hoy" para que al menos aparezca en el calendario.
-            fecha_detectada = extraer_fecha_del_texto(f"{titulo} {descripcion}".lower())
-            fecha_evento_dt = fecha_detectada or datetime.now(timezone.utc)
+            # Solo insertamos si detectamos una fecha real en el texto. Antes,
+            # si no se detectaba, se usaba "hoy" como reemplazo -- eso hacia
+            # que homepages genericas de conferencias (sin fecha puntual
+            # legible) se guardaran como si el evento fuera justo hoy, y se
+            # vieran vencidas casi de inmediato. Mejor descartar que inventar.
+            fecha_evento_dt = extraer_fecha_del_texto(f"{titulo} {descripcion}".lower())
+            if fecha_evento_dt is None:
+                continue
 
-            # Chequeo final (misma logica que en procesar_fuente): nunca
-            # insertar si la fecha que vamos a guardar ya paso.
+            # Chequeo final: nunca insertar si la fecha ya paso.
             if fecha_evento_dt.date() < datetime.now(timezone.utc).date():
                 continue
 
