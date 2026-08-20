@@ -9,9 +9,16 @@
 <style>
   :root {
     --azul: #185fa5;
+    --azul-suave: #e8f1fb;
+    --naranja: #993c1d;
+    --naranja-suave: #fbe9e4;
+    --verde: #2f7d4f;
+    --verde-suave: #e6f4ea;
     --gris-fondo: #f6f5f2;
     --gris-borde: #d8d6cd;
+    --gris-borde-suave: #e8e6df;
     --texto: #2c2c2a;
+    --texto-tenue: #767469;
   }
   * { box-sizing: border-box; }
   body {
@@ -31,11 +38,7 @@
     gap: 12px;
   }
   header h1 { font-size: 18px; margin: 0; font-weight: 600; }
-  .filtros {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
+  .filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   select, button {
     padding: 8px 12px;
     border-radius: 8px;
@@ -43,18 +46,102 @@
     background: white;
     font-size: 14px;
     cursor: pointer;
+    color: var(--texto);
   }
-  main { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+  .boton-agregar {
+    padding: 8px 14px; background: var(--azul); color: white;
+    border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 500;
+  }
+
+  main { max-width: 1180px; margin: 24px auto; padding: 0 16px; }
+
+  .leyenda { display: flex; gap: 18px; margin-bottom: 16px; flex-wrap: wrap; font-size: 13px; color: var(--texto-tenue); }
+  .leyenda span { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  .tablero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .tablero { grid-template-columns: 1fr; }
+  }
+
+  /* ---- Calendario: minimalista, sin listas de eventos dentro de la celda ---- */
   #calendario {
     background: white;
-    border-radius: 12px;
+    border-radius: 14px;
     border: 1px solid var(--gris-borde);
-    padding: 16px;
+    padding: 14px;
   }
-  .fc-event { cursor: pointer; border: none !important; }
-  .leyenda { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; font-size: 13px; }
-  .leyenda span { display: flex; align-items: center; gap: 6px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .fc { --fc-border-color: var(--gris-borde-suave); --fc-today-bg-color: transparent; }
+  .fc .fc-toolbar-title { font-size: 16px; font-weight: 600; }
+  .fc .fc-button {
+    background: white; border: 1px solid var(--gris-borde); color: var(--texto);
+    box-shadow: none; text-transform: capitalize; font-size: 13px;
+  }
+  .fc .fc-button:hover { background: var(--gris-fondo); }
+  .fc .fc-button-primary:not(:disabled).fc-button-active { background: var(--azul); border-color: var(--azul); }
+  .fc .fc-daygrid-day-frame { padding: 4px; min-height: 68px; }
+  .fc .fc-daygrid-day-top { justify-content: center; padding-top: 4px; }
+  .fc-daygrid-day-number { font-size: 13px; }
+
+  /* Numero del dia: circulo cuando es "hoy", relleno cuando esta seleccionado */
+  .dia-numero {
+    width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; font-size: 13px; color: var(--texto);
+  }
+  .fc-day-today .dia-numero { border: 2px solid var(--azul); font-weight: 700; color: var(--azul); }
+  .dia-seleccionado .dia-numero { background: var(--azul); color: white; font-weight: 700; border-color: var(--azul); }
+  .dia-seleccionado { background: var(--azul-suave); border-radius: 10px; }
+  .fc-daygrid-day:hover:not(.dia-seleccionado) { background: var(--gris-fondo); cursor: pointer; border-radius: 10px; }
+
+  /* Punto(s) bajo el numero indicando cuantos eventos tiene ese dia */
+  .puntos-evento { display: flex; gap: 3px; justify-content: center; margin-top: 3px; height: 6px; }
+  .puntos-evento .dot { width: 5px; height: 5px; }
+  .contador-extra { font-size: 9px; color: var(--texto-tenue); margin-left: 1px; }
+
+  /* ---- Panel de agenda del dia seleccionado ---- */
+  #agenda {
+    background: white;
+    border-radius: 14px;
+    border: 1px solid var(--gris-borde);
+    padding: 18px;
+    min-height: 300px;
+  }
+  #agenda h2 { font-size: 15px; margin: 0 0 2px; text-transform: capitalize; }
+  #agenda .subtitulo { font-size: 12px; color: var(--texto-tenue); margin: 0 0 16px; }
+  .lista-agenda { display: flex; flex-direction: column; gap: 10px; }
+
+  .tarjeta-evento {
+    border: 1px solid var(--gris-borde-suave);
+    border-left: 3px solid var(--azul);
+    border-radius: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: background 0.12s ease;
+  }
+  .tarjeta-evento:hover { background: var(--gris-fondo); }
+  .tarjeta-evento.manual { border-left-color: var(--naranja); }
+  .tarjeta-evento .hora { font-size: 11px; color: var(--texto-tenue); font-weight: 600; letter-spacing: 0.02em; }
+  .tarjeta-evento .titulo { font-size: 14px; font-weight: 600; margin: 3px 0 6px; line-height: 1.35; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+    background: var(--gris-fondo); color: var(--texto-tenue);
+  }
+  .badge.gratis { background: var(--verde-suave); color: var(--verde); }
+  .badge.categoria { background: var(--azul-suave); color: var(--azul); }
+
+  .vacio {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 40px 12px; color: var(--texto-tenue);
+  }
+  .vacio .icono { font-size: 28px; margin-bottom: 10px; opacity: 0.6; }
+  .vacio p { margin: 0; font-size: 13px; max-width: 220px; }
+
   #modal {
     display: none;
     position: fixed; inset: 0;
@@ -85,7 +172,11 @@
   <div class="filtros">
     <select id="filtroProyecto"><option value="">Todos los proyectos</option></select>
     <select id="filtroCategoria"><option value="">Todas las categorias</option></select>
-    <a href="/admin.html" style="padding:8px 12px;background:var(--azul);color:white;border-radius:8px;text-decoration:none;font-size:14px;">+ Agregar proyecto</a>
+    <select id="filtroGratis">
+      <option value="">Gratis y pago</option>
+      <option value="gratis">Solo gratuitos</option>
+    </select>
+    <a href="/admin.html" class="boton-agregar">+ Agregar proyecto</a>
   </div>
 </header>
 
@@ -93,8 +184,18 @@
   <div class="leyenda">
     <span><span class="dot" style="background:#185fa5"></span> Automatico (fuente verificada)</span>
     <span><span class="dot" style="background:#993c1d"></span> Manual (agregado por el equipo)</span>
+    <span><span class="badge gratis" style="padding:1px 7px;">Gratis</span> Evento sin costo</span>
   </div>
-  <div id="calendario"></div>
+
+  <div class="tablero">
+    <div id="calendario"></div>
+
+    <div id="agenda">
+      <h2 id="agendaTitulo">Hoy</h2>
+      <p class="subtitulo" id="agendaSubtitulo"></p>
+      <div id="agendaContenido"></div>
+    </div>
+  </div>
 </main>
 
 <div id="modal">
@@ -114,6 +215,9 @@
   // ===================================================
 
   let eventosCache = [];
+  let proyectosPorId = {};
+  let calendar = null;
+  let diaSeleccionado = formatoFecha(new Date());
 
   async function cargarDatos() {
     const [eventosRes, proyectosRes] = await Promise.all([
@@ -137,13 +241,32 @@
     });
   }
 
+  function formatoFecha(d) {
+    // YYYY-MM-DD en horario local (evita corrimientos de un dia por UTC)
+    const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function eventosFiltrados() {
+    const fp = document.getElementById("filtroProyecto").value;
+    const fc = document.getElementById("filtroCategoria").value;
+    const fg = document.getElementById("filtroGratis").value;
+    return eventosCache.filter(e => {
+      const nombreProyecto = proyectosPorId[e.proyecto_id]?.nombre;
+      const okProyecto = !fp || nombreProyecto === fp;
+      const okCategoria = !fc || e.categoria === fc;
+      const okGratis = !fg || e.es_gratuito === true;
+      return okProyecto && okCategoria && okGratis;
+    });
+  }
+
   function abrirModal(evento) {
-    document.getElementById("modalTitulo").textContent = evento.title;
-    document.getElementById("modalDescripcion").textContent = limpiarHTML(evento.extendedProps.descripcion) || "Sin descripcion.";
+    document.getElementById("modalTitulo").textContent = evento.titulo;
+    document.getElementById("modalDescripcion").textContent = limpiarHTML(evento.descripcion) || "Sin descripcion.";
     const meta = [];
-    if (evento.extendedProps.categoria) meta.push(`Categoria: ${evento.extendedProps.categoria}`);
-    if (evento.extendedProps.fuente_nombre) meta.push(`Fuente: ${evento.extendedProps.fuente_nombre}`);
-    if (evento.extendedProps.url) meta.push(`<a href="${evento.extendedProps.url}" target="_blank" rel="noopener">Ver enlace original</a>`);
+    if (evento.categoria) meta.push(`Categoria: ${evento.categoria}`);
+    if (evento.fuente_nombre) meta.push(`Fuente: ${evento.fuente_nombre}`);
+    if (evento.url) meta.push(`<a href="${evento.url}" target="_blank" rel="noopener">Ver enlace original</a>`);
     document.getElementById("modalMeta").innerHTML = meta.join(" · ");
     document.getElementById("modal").style.display = "flex";
   }
@@ -158,60 +281,132 @@
     return (tmp.textContent || tmp.innerText || "").trim();
   }
 
+  // ---- Panel de agenda: muestra, bien organizados, los eventos del dia seleccionado ----
+  function pintarAgenda() {
+    const eventosDelDia = eventosFiltrados()
+      .filter(e => formatoFecha(new Date(e.fecha_inicio)) === diaSeleccionado)
+      .sort((a, b) => new Date(a.fecha_inicio) - new Date(b.fecha_inicio));
+
+    const hoy = formatoFecha(new Date());
+    const [y, m, d] = diaSeleccionado.split("-").map(Number);
+    const fechaLegible = new Date(y, m - 1, d).toLocaleDateString("es-CO", {
+      weekday: "long", day: "numeric", month: "long"
+    });
+
+    document.getElementById("agendaTitulo").textContent = diaSeleccionado === hoy ? "Hoy" : fechaLegible;
+    document.getElementById("agendaSubtitulo").textContent =
+      diaSeleccionado === hoy ? fechaLegible : `${eventosDelDia.length} evento(s) encontrados`;
+
+    const contenedor = document.getElementById("agendaContenido");
+
+    if (eventosDelDia.length === 0) {
+      contenedor.innerHTML = `
+        <div class="vacio">
+          <div class="icono">🗓️</div>
+          <p>No hay eventos, cursos ni bootcamps registrados para este dia todavia.</p>
+        </div>`;
+      return;
+    }
+
+    contenedor.innerHTML = `<div class="lista-agenda">${eventosDelDia.map(e => tarjetaHTML(e)).join("")}</div>`;
+
+    contenedor.querySelectorAll(".tarjeta-evento").forEach(el => {
+      el.addEventListener("click", () => {
+        const evento = eventosDelDia.find(e => e.id === el.dataset.id);
+        if (evento) abrirModal(evento);
+      });
+    });
+  }
+
+  function tarjetaHTML(e) {
+    const hora = new Date(e.fecha_inicio).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
+    const claseFuente = e.fuente_tipo === "manual" ? "manual" : "";
+    const badges = [];
+    if (e.es_gratuito) badges.push(`<span class="badge gratis">Gratis</span>`);
+    if (e.categoria) badges.push(`<span class="badge categoria">${escapar(e.categoria)}</span>`);
+    return `
+      <div class="tarjeta-evento ${claseFuente}" data-id="${e.id}">
+        <div class="hora">${hora}</div>
+        <div class="titulo">${escapar(e.titulo)}</div>
+        <div class="badges">${badges.join("")}</div>
+      </div>`;
+  }
+
+  function escapar(texto) {
+    const div = document.createElement("div");
+    div.textContent = texto || "";
+    return div.innerHTML;
+  }
+
+  // ---- Calendario: minimalista, solo numero + puntos indicando cantidad de eventos ----
+  function refrescarCalendario() {
+    calendar.refetchEvents();
+    calendar.render(); // fuerza a repintar dayCellContent con los conteos actuales
+    pintarAgenda();
+  }
+
   (async function init() {
     const { eventos, proyectos } = await cargarDatos();
     eventosCache = eventos;
+    proyectosPorId = Object.fromEntries(proyectos.map(p => [p.id, p]));
 
-    const proyectosPorId = Object.fromEntries(proyectos.map(p => [p.id, p]));
     const nombresProyectos = proyectos.map(p => p.nombre);
     const categorias = [...new Set(eventos.map(e => e.categoria).filter(Boolean))];
-
     llenarFiltro(document.getElementById("filtroProyecto"), nombresProyectos);
     llenarFiltro(document.getElementById("filtroCategoria"), categorias);
 
     const calendarEl = document.getElementById("calendario");
-    const calendar = new FullCalendar.Calendar(calendarEl, {
+    calendar = new FullCalendar.Calendar(calendarEl, {
       initialView: "dayGridMonth",
       locale: "es",
       height: "auto",
-      headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,listMonth" },
-      events: mapearEventos(eventos, proyectosPorId),
-      eventClick: (info) => abrirModal(info.event)
+      headerToolbar: { left: "prev,next today", center: "title", right: "" },
+      dayMaxEvents: false,
+      eventDisplay: "none", // no listamos eventos dentro de la celda: eso es lo que se veia "vacio/lleno" y feo
+      dayCellClassNames: (arg) => formatoFecha(arg.date) === diaSeleccionado ? ["dia-seleccionado"] : [],
+      dayCellContent: (arg) => {
+        const fecha = formatoFecha(arg.date);
+        const cantidad = eventosFiltrados().filter(e => formatoFecha(new Date(e.fecha_inicio)) === fecha).length;
+        const wrapper = document.createElement("div");
+
+        const numero = document.createElement("div");
+        numero.className = "dia-numero";
+        numero.textContent = arg.dayNumberText.replace(/[^0-9]/g, "");
+        wrapper.appendChild(numero);
+
+        const puntos = document.createElement("div");
+        puntos.className = "puntos-evento";
+        const maxPuntos = Math.min(cantidad, 3);
+        for (let i = 0; i < maxPuntos; i++) {
+          const p = document.createElement("span");
+          p.className = "dot";
+          p.style.background = "var(--azul)";
+          puntos.appendChild(p);
+        }
+        if (cantidad > 3) {
+          const extra = document.createElement("span");
+          extra.className = "contador-extra";
+          extra.textContent = `+${cantidad - 3}`;
+          puntos.appendChild(extra);
+        }
+        wrapper.appendChild(puntos);
+        return { domNodes: [wrapper] };
+      },
+      dateClick: (info) => {
+        diaSeleccionado = formatoFecha(info.date);
+        refrescarCalendario();
+      },
+      events: [], // no usamos las barras de FullCalendar; el detalle vive en el panel de agenda
     });
     calendar.render();
 
-    function refrescar() {
-      const fp = document.getElementById("filtroProyecto").value;
-      const fc = document.getElementById("filtroCategoria").value;
-      const filtrados = eventosCache.filter(e => {
-        const nombreProyecto = proyectosPorId[e.proyecto_id]?.nombre;
-        const okProyecto = !fp || nombreProyecto === fp;
-        const okCategoria = !fc || e.categoria === fc;
-        return okProyecto && okCategoria;
-      });
-      calendar.removeAllEvents();
-      calendar.addEventSource(mapearEventos(filtrados, proyectosPorId));
-    }
+    pintarAgenda();
+
+    function refrescar() { refrescarCalendario(); }
     document.getElementById("filtroProyecto").addEventListener("change", refrescar);
     document.getElementById("filtroCategoria").addEventListener("change", refrescar);
+    document.getElementById("filtroGratis").addEventListener("change", refrescar);
   })();
-
-  function mapearEventos(eventos, proyectosPorId) {
-    return eventos.map(e => ({
-      id: e.id,
-      title: e.titulo,
-      start: e.fecha_inicio,
-      end: e.fecha_fin || undefined,
-      color: e.fuente_tipo === "manual" ? "#993c1d" : "#185fa5",
-      extendedProps: {
-        descripcion: e.descripcion,
-        categoria: e.categoria,
-        fuente_nombre: e.fuente_nombre,
-        url: e.url,
-        proyecto: proyectosPorId[e.proyecto_id]?.nombre
-      }
-    }));
-  }
 </script>
 </body>
 </html>

@@ -2,9 +2,20 @@ name: Recolectar eventos PMO
 
 on:
   schedule:
-    # Todos los dias a las 8:00am hora Colombia (13:00 UTC)
-    - cron: "0 13 * * *"
+    # Todos los dias ~8:00am hora Colombia (13:00 UTC).
+    # OJO: se usa el minuto 13 (no el 0 en punto) a proposito. GitHub Actions
+    # advierte oficialmente que los cron jobs pueden retrasarse -o saltarse-
+    # varios minutos en las horas de mayor carga, y el minuto exacto de cada
+    # hora (":00") es el momento de mas carga de toda la plataforma. Correr
+    # en un minuto "raro" reduce mucho la probabilidad de retraso.
+    - cron: "13 13 * * *"
   workflow_dispatch: {}   # permite correrlo manualmente desde GitHub
+
+# Evita que dos corridas se pisen si una quedo colgada o si se dispara una
+# manual justo cuando iba a correr la programada.
+concurrency:
+  group: recolectar-eventos
+  cancel-in-progress: false
 
 jobs:
   recolectar:

@@ -26,6 +26,7 @@ export default async (request) => {
   const categoria = (body.categoria || "").trim() || null;
   const descripcion = (body.descripcion || "").trim() || null;
   const url = (body.url || "").trim() || null;
+  const es_gratuito = Boolean(body.es_gratuito);
 
   if (!titulo || !fecha_inicio) {
     return json({ error: "Faltan campos: titulo y fecha_inicio son obligatorios" }, 400);
@@ -42,7 +43,7 @@ export default async (request) => {
       Prefer: "return=representation,resolution=ignore-duplicates",
     },
     body: JSON.stringify({
-      titulo, descripcion, fecha_inicio, categoria, url, proyecto_id,
+      titulo, descripcion, fecha_inicio, categoria, url, proyecto_id, es_gratuito,
       fuente_tipo: "manual",
       fuente_nombre: "Agregado por el equipo PMO",
       hash_unico,

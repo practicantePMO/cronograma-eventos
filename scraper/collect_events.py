@@ -48,23 +48,46 @@ if not SEARXNG_URL:
     print("AVISO: falta SEARXNG_URL -> se omite la busqueda automatica por categoria")
 
 # Palabras que deben aparecer en el titulo o descripcion para considerar que
-# un resultado de busqueda SI es un evento real (y no un articulo generico).
+# un resultado de busqueda SI es un evento/formacion real (y no un articulo
+# generico ni una landing de venta de servicios).
 PALABRAS_EVENTO = [
     "webinar", "webinars", "conferencia", "conference", "congreso",
     "seminario", "seminar", "summit", "simposio", "symposium",
-    "jornada", "foro", "forum", "workshop", "taller online",
-    "evento virtual", "evento online", "sesion online", "sesión online",
-    "live session", "online event", "virtual event", "masterclass",
+    "jornada", "foro", "forum", "workshop", "taller online", "taller virtual",
+    "taller presencial", "evento virtual", "evento online", "evento presencial",
+    "sesion online", "sesión online", "live session", "online event",
+    "virtual event", "masterclass",
+    # Formacion (lo que mas te interesa: cursos y bootcamps organizados)
+    "bootcamp", "curso online", "curso virtual", "curso gratuito",
+    "curso gratis", "capacitacion", "capacitación", "certificacion",
+    "certificación", "diplomado", "programa de formacion",
+    "programa de formación", "hackathon", "meetup",
+]
+
+# Palabras que, si aparecen, suben la prioridad del evento por ser gratuito
+# (no se usan para descartar, solo para etiquetar "es_gratuito").
+PALABRAS_GRATIS = [
+    "gratis", "gratuito", "gratuita", "free", "sin costo", "sin costo alguno",
+    "no cost", "cupo gratuito", "acceso gratuito",
 ]
 
 # Dominios que casi nunca son eventos reales (repos de codigo, agregadores de
-# noticias, tiendas, etc.). Si un resultado viene de aqui, se descarta.
+# noticias, tiendas, etc.). Si un resultado viene de aqui, se descarta antes
+# de mirar nada mas.
 DOMINIOS_EXCLUIDOS = [
     "github.com", "gitlab.com", "news.ycombinator.com", "reddit.com",
     "stackoverflow.com", "medium.com", "youtube.com", "amazon.",
     "wikipedia.org", "facebook.com", "twitter.com", "x.com",
     "linkedin.com/pulse", "pinterest.", "instagram.com",
 ]
+
+# Sufijos de dominio institucionales que se aceptan aunque el dominio exacto
+# no este en la tabla "dominios_verificados" (universidades, gobierno, ONGs).
+SUFIJOS_INSTITUCIONALES = (
+    ".edu", ".edu.co", ".edu.mx", ".edu.ar", ".edu.pe", ".edu.cl",
+    ".gob.co", ".gob.mx", ".gob.pe", ".gob.ar", ".gov.co", ".gov", ".gob",
+    ".org",
+)
 
 # Para que un resultado de busqueda cuente como evento, ademas de traer una
 # palabra-evento, exigimos que tenga alguna senal de fecha o de accion tipica
@@ -105,6 +128,27 @@ def obtener_proyectos():
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def obtener_dominios_verificados():
+    """
+    Trae la lista blanca de dominios verificados (tabla dominios_verificados).
+    Si la tabla no existe todavia (no se ha corrido la migracion), devuelve
+    una lista vacia y avisa, en vez de reventar el scraper.
+    """
+    try:
+        resp = requests.get(
+            f"{SUPABASE_URL}/rest/v1/dominios_verificados",
+            headers=HEADERS,
+            params={"activo": "eq.true", "select": "dominio"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return [d["dominio"].lower() for d in resp.json()]
+    except Exception as exc:
+        print(f"AVISO: no se pudo leer dominios_verificados ({exc}). "
+              f"Corre supabase/migracion_dominios_verificados.sql y vuelve a intentar.")
+        return []
 
 
 def calcular_hash(titulo, url):
@@ -182,6 +226,7 @@ def procesar_fuente(fuente, proyectos):
             "url": url,
             "proyecto_id": proyecto_id,
             "hash_unico": calcular_hash(titulo, url),
+            "es_gratuito": es_gratuito(titulo, resumen),
         }
         insertar_evento(evento)
 
@@ -199,14 +244,46 @@ MESES = {
 }
 
 # Frases tipicas de una landing page de empresa (no de un evento puntual).
-# Si el texto se parece mas a esto, lo descartamos.
+# Se mantienen como señal EXTRA de descarte, pero ya NO son la defensa
+# principal (ver DOMINIOS_EXCLUIDOS y el filtro de dominio verificado en
+# parece_evento): una empresa puede vender sus servicios sin usar ninguna
+# de estas frases exactas, por eso ahora el filtro fuerte es por dominio.
 SENALES_PAGINA_EMPRESA = [
     "nuestros servicios", "nuestros productos", "quienes somos",
     "sobre nosotros", "about us", "our services", "our products",
     "solicita una demo", "request a demo", "contactanos", "contact us",
     "planes y precios", "pricing", "solucion empresarial",
     "plataforma lider", "leading platform", "software de",
+    "agencia de", "consultoria en", "consultora especializada en",
 ]
+
+
+def dominio_de_url(url):
+    m = re.search(r"https?://([^/]+)", url.lower())
+    if not m:
+        return ""
+    return m.group(1).replace("www.", "")
+
+
+def dominio_verificado(url, dominios_permitidos):
+    """
+    True si el dominio del resultado esta en la lista blanca de
+    dominios_verificados, o si termina en un sufijo institucional
+    (.edu, .gob, .gov, .org). Este es el filtro fuerte contra paginas
+    de empresas: si el sitio no esta aprobado por ti, no entra, sin
+    importar que tan "de evento" suene el texto.
+    """
+    dominio = dominio_de_url(url)
+    if not dominio:
+        return False
+    if dominio.endswith(SUFIJOS_INSTITUCIONALES):
+        return True
+    return any(dominio == d or dominio.endswith("." + d) for d in dominios_permitidos)
+
+
+def es_gratuito(titulo, descripcion):
+    texto = f"{titulo} {descripcion}".lower()
+    return any(palabra in texto for palabra in PALABRAS_GRATIS)
 
 
 def extraer_fecha_del_texto(texto):
@@ -251,7 +328,7 @@ def parece_pagina_de_empresa(titulo, descripcion):
     return any(frase in texto for frase in SENALES_PAGINA_EMPRESA)
 
 
-def parece_evento(titulo, descripcion, url):
+def parece_evento(titulo, descripcion, url, dominios_permitidos):
     texto = f"{titulo} {descripcion}".lower()
     url_lower = url.lower()
 
@@ -259,22 +336,30 @@ def parece_evento(titulo, descripcion, url):
     if any(dom in url_lower for dom in DOMINIOS_EXCLUIDOS):
         return False
 
-    # 2. Debe traer al menos una palabra clara de evento.
+    # 2. FILTRO FUERTE: el dominio debe estar verificado por ti (tabla
+    #    dominios_verificados) o ser institucional (.edu/.gob/.gov/.org).
+    #    Esto es lo que evita que se cuelen paginas de empresas que venden
+    #    cursos/servicios: si el sitio no esta en tu lista aprobada, no pasa,
+    #    sin importar como este redactado el texto.
+    if not dominio_verificado(url, dominios_permitidos):
+        return False
+
+    # 3. Debe traer al menos una palabra clara de evento/curso/bootcamp.
     if not any(palabra in texto for palabra in PALABRAS_EVENTO):
         return False
 
-    # 3. Ademas debe traer alguna senal de fecha o de accion de evento.
+    # 4. Ademas debe traer alguna senal de fecha o de accion de evento.
     #    Esto filtra paginas genericas que solo mencionan la palabra "webinar"
-    #    de pasada (ej. una landing de un servicio pago).
+    #    de pasada.
     if not any(senal in texto for senal in SENALES_FECHA):
         return False
 
-    # 4. Descartar si parece una landing page de empresa (servicios, precios,
-    #    "quienes somos", etc.) en vez de un evento puntual.
+    # 5. Descartar si ademas parece una landing page de empresa (senal extra,
+    #    por si un sitio verificado tiene tambien paginas de venta mezcladas).
     if parece_pagina_de_empresa(titulo, descripcion):
         return False
 
-    # 5. Descartar si detectamos una fecha y esa fecha YA paso.
+    # 6. Descartar si detectamos una fecha y esa fecha YA paso.
     #    (Si no hay fecha detectable, se deja pasar, segun tu preferencia.)
     if fecha_ya_paso(texto):
         return False
@@ -282,22 +367,33 @@ def parece_evento(titulo, descripcion, url):
     return True
 
 
-def buscar_por_categoria(categoria, proyecto_id):
+def buscar_por_categoria(categoria, proyecto_id, dominios_permitidos):
     """
-    Busca eventos sobre una categoria usando tu propia instancia de SearXNG
-    (auto-hospedada, JSON, sin cuenta ni limite diario de cuota).
+    Busca eventos, cursos y bootcamps sobre una categoria usando tu propia
+    instancia de SearXNG (auto-hospedada, JSON, sin cuenta ni limite diario
+    de cuota).
 
-    Estrategia enfocada en WEBINARS y CONFERENCIAS ONLINE con calidad sobre
-    cantidad: consultas dirigidas + filtro estricto (parece_evento).
+    Estrategia con calidad sobre cantidad: consultas dirigidas a cursos y
+    bootcamps (con enfasis en gratuitos), organizadas por sitio via "site:"
+    cuando hay dominios verificados, + filtro estricto (parece_evento), que
+    exige que el dominio este en tu lista blanca.
     """
     if not SEARXNG_URL:
         return
 
-    consultas = [
+    consultas_base = [
+        f"bootcamp {categoria} 2026 gratuito inscripcion",
+        f"curso online {categoria} 2026 gratis registro",
         f"webinar {categoria} 2026 registro",
         f"conferencia online {categoria} 2026",
-        f'"{categoria}" webinar gratuito inscripcion',
     ]
+
+    # Si ya tenemos dominios verificados, dirigimos las busquedas a esos
+    # sitios especificos con "site:" -> resultados de mucha mas calidad,
+    # porque le pedimos al buscador que solo mire sitios que tu aprobaste.
+    consultas = list(consultas_base)
+    for dominio in dominios_permitidos[:6]:  # limite de seguridad por corrida
+        consultas.append(f"site:{dominio} {categoria} bootcamp OR curso OR webinar 2026")
 
     for consulta in consultas:
         try:
@@ -319,8 +415,8 @@ def buscar_por_categoria(categoria, proyecto_id):
 
             if not titulo or not url:
                 continue
-            if not parece_evento(titulo, descripcion, url):
-                continue  # descarta lo que no parece un evento real
+            if not parece_evento(titulo, descripcion, url, dominios_permitidos):
+                continue  # descarta lo que no parece un evento/curso real de un sitio verificado
 
             # Si detectamos una fecha real en el texto, la usamos; si no,
             # usamos "hoy" para que al menos aparezca en el calendario.
@@ -337,11 +433,12 @@ def buscar_por_categoria(categoria, proyecto_id):
                 "url": url,
                 "proyecto_id": proyecto_id,
                 "hash_unico": calcular_hash(titulo, url),
+                "es_gratuito": es_gratuito(titulo, descripcion),
             }
             insertar_evento(evento)
 
 
-def procesar_categorias_automaticas(proyectos):
+def procesar_categorias_automaticas(proyectos, dominios_permitidos):
     categorias_vistas = set()
     for p in proyectos:
         if p.get("estado") != "activo":
@@ -353,7 +450,7 @@ def procesar_categorias_automaticas(proyectos):
             categorias_vistas.add(clave)
             print(f"Buscando automaticamente eventos para categoria: {categoria}")
             try:
-                buscar_por_categoria(categoria, p["id"])
+                buscar_por_categoria(categoria, p["id"], dominios_permitidos)
             except Exception as exc:
                 print(f"  ! Error en categoria '{categoria}': {exc}")
 
@@ -361,7 +458,9 @@ def procesar_categorias_automaticas(proyectos):
 def main():
     fuentes = obtener_fuentes()
     proyectos = obtener_proyectos()
-    print(f"{len(fuentes)} fuente(s) RSS activa(s), {len(proyectos)} proyecto(s) cargado(s).\n")
+    dominios_permitidos = obtener_dominios_verificados()
+    print(f"{len(fuentes)} fuente(s) RSS activa(s), {len(proyectos)} proyecto(s) cargado(s), "
+          f"{len(dominios_permitidos)} dominio(s) verificado(s).\n")
 
     for fuente in fuentes:
         try:
@@ -370,7 +469,7 @@ def main():
             print(f"  ! Error procesando {fuente['nombre']}: {exc}")
 
     print()
-    procesar_categorias_automaticas(proyectos)
+    procesar_categorias_automaticas(proyectos, dominios_permitidos)
 
     print("\nListo.")
 

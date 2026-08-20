@@ -78,6 +78,11 @@
       <label>Enlace (opcional)</label>
       <input type="url" id="e_url" placeholder="https://..." />
 
+      <label style="display:flex; align-items:center; gap:8px; margin-top:14px;">
+        <input type="checkbox" id="e_gratis" style="width:auto;" />
+        <span style="font-weight:400;">Es un evento/curso gratuito</span>
+      </label>
+
       <button type="submit">Guardar evento</button>
       <div class="mensaje" id="msgEvento"></div>
     </form>
@@ -154,6 +159,7 @@
       categoria: document.getElementById("e_categoria").value,
       descripcion: document.getElementById("e_descripcion").value,
       url: document.getElementById("e_url").value,
+      es_gratuito: document.getElementById("e_gratis").checked,
     };
     const resp = await fetch("/api/eventos", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
